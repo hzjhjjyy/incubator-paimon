@@ -16,11 +16,11 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.flink.action.cdc.kafka.format.canal;
+package org.apache.paimon.flink.action.cdc.format.canal;
 
 import org.apache.paimon.flink.action.cdc.ComputedColumn;
 import org.apache.paimon.flink.action.cdc.TypeMapping;
-import org.apache.paimon.flink.action.cdc.kafka.format.RecordParser;
+import org.apache.paimon.flink.action.cdc.format.RecordParser;
 import org.apache.paimon.flink.action.cdc.mysql.MySqlTypeUtils;
 import org.apache.paimon.flink.sink.cdc.RichCdcMultiplexRecord;
 import org.apache.paimon.types.DataType;
@@ -65,6 +65,7 @@ public class CanalRecordParser extends RecordParser {
     private static final String OP_UPDATE = "UPDATE";
     private static final String OP_INSERT = "INSERT";
     private static final String OP_DELETE = "DELETE";
+    private static final String OP_ROW = "ROW";
 
     @Override
     protected boolean isDDL() {
@@ -110,6 +111,7 @@ public class CanalRecordParser extends RecordParser {
                     processRecord(data, RowKind.INSERT, records);
                     break;
                 case OP_INSERT:
+                case OP_ROW:
                     processRecord(data, RowKind.INSERT, records);
                     break;
                 case OP_DELETE:
