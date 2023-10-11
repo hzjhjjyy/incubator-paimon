@@ -671,12 +671,13 @@ public class CoreOptions implements Serializable {
                             "Full compaction will be constantly triggered after delta commits.");
 
     @ExcludeFromDocumentation("Internal use only")
-    public static final ConfigOption<StreamingCompactionType> STREAMING_COMPACT =
-            key("streaming-compact")
-                    .enumType(StreamingCompactionType.class)
-                    .defaultValue(StreamingCompactionType.NONE)
+    public static final ConfigOption<StreamScanMode> STREAM_SCAN_MODE =
+            key("stream-scan-mode")
+                    .enumType(StreamScanMode.class)
+                    .defaultValue(StreamScanMode.NONE)
                     .withDescription(
-                            "Only used to force TableScan to construct suitable 'StartingUpScanner' and 'FollowUpScanner' dedicated streaming compaction job.");
+                            "Only used to force TableScan to construct suitable 'StartingUpScanner' and 'FollowUpScanner' "
+                                    + "dedicated internal streaming scan.");
 
     public static final ConfigOption<StreamingReadMode> STREAMING_READ_MODE =
             key("streaming-read-mode")
@@ -895,6 +896,13 @@ public class CoreOptions implements Serializable {
                                     + "bootstrap will only read the partitions above it, and the smaller partitions will not be read into the index. "
                                     + "This can reduce job startup time and excessive initialization of index, "
                                     + "but please note that this may also cause data duplication.");
+
+    public static final ConfigOption<Integer> ZORDER_VAR_LENGTH_CONTRIBUTION =
+            key("zorder.var-length-contribution")
+                    .intType()
+                    .defaultValue(8)
+                    .withDescription(
+                            "The bytes of types (CHAR, VARCHAR, BINARY, VARBINARY) devote to the zorder sort.");
 
     private final Options options;
 
@@ -1334,6 +1342,10 @@ public class CoreOptions implements Serializable {
         return options.get(CROSS_PARTITION_UPSERT_BOOTSTRAP_MIN_PARTITION);
     }
 
+    public int varTypeSize() {
+        return options.get(ZORDER_VAR_LENGTH_CONTRIBUTION);
+    }
+
     /** Specifies the merge engine for table with primary key. */
     public enum MergeEngine implements DescribedEnum {
         DEDUPLICATE("deduplicate", "De-duplicate and keep the last row."),
@@ -1615,16 +1627,18 @@ public class CoreOptions implements Serializable {
         }
     }
 
-    /** Compaction type when trigger a compaction action. */
-    public enum StreamingCompactionType implements DescribedEnum {
-        NONE("none", "Not a streaming compaction."),
-        NORMAL("normal", "Compaction for traditional bucket table."),
-        BUCKET_UNAWARE("unaware", "Compaction for unaware bucket table.");
+    /** Inner stream scan mode for some internal requirements. */
+    public enum StreamScanMode implements DescribedEnum {
+        NONE("none", "No requirement."),
+        COMPACT_BUCKET_TABLE("compact-bucket-table", "Compaction for traditional bucket table."),
+        COMPACT_APPEND_NO_BUCKET(
+                "compact-append-no-bucket", "Compaction for append table with bucket unaware."),
+        FILE_MONITOR("file-monitor", "Monitor data file changes.");
 
         private final String value;
         private final String description;
 
-        StreamingCompactionType(String value, String description) {
+        StreamScanMode(String value, String description) {
             this.value = value;
             this.description = description;
         }
@@ -1641,22 +1655,6 @@ public class CoreOptions implements Serializable {
 
         public String getValue() {
             return value;
-        }
-
-        @VisibleForTesting
-        public static StreamingCompactionType fromValue(String value) {
-            for (StreamingCompactionType formatType : StreamingCompactionType.values()) {
-                if (formatType.value.equals(value)) {
-                    return formatType;
-                }
-            }
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Invalid format type %s, only support [%s]",
-                            value,
-                            StringUtils.join(
-                                    Arrays.stream(StreamingCompactionType.values()).iterator(),
-                                    ",")));
         }
     }
 

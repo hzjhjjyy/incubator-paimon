@@ -16,35 +16,21 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.flink.procedure;
+package org.apache.paimon.table.source.snapshot;
 
-import org.apache.paimon.catalog.Catalog;
-import org.apache.paimon.catalog.Identifier;
-import org.apache.paimon.table.Table;
+import org.apache.paimon.Snapshot;
+import org.apache.paimon.table.source.ScanMode;
 
-import org.apache.flink.table.procedure.ProcedureContext;
+/** {@link FollowUpScanner} for read all file changes. */
+public class AllDeltaFollowUpScanner implements FollowUpScanner {
 
-/**
- * Delete tag procedure. Usage:
- *
- * <pre><code>
- *  CALL delete_tag('tableId', 'tagName')
- * </code></pre>
- */
-public class DeleteTagProcedure extends ProcedureBase {
-
-    public static final String IDENTIFIER = "delete_tag";
-
-    public String[] call(ProcedureContext procedureContext, String tableId, String tagName)
-            throws Catalog.TableNotExistException {
-        Table table = catalog.getTable(Identifier.fromString(tableId));
-        table.deleteTag(tagName);
-
-        return new String[] {"Success"};
+    @Override
+    public boolean shouldScanSnapshot(Snapshot snapshot) {
+        return true;
     }
 
     @Override
-    public String identifier() {
-        return IDENTIFIER;
+    public SnapshotReader.Plan scan(long snapshotId, SnapshotReader snapshotReader) {
+        return snapshotReader.withMode(ScanMode.DELTA).withSnapshot(snapshotId).readChanges();
     }
 }
