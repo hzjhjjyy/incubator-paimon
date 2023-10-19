@@ -117,12 +117,6 @@ under the License.
             <td>The discovery interval of continuous reading.</td>
         </tr>
         <tr>
-            <td><h5>cross-partition-upsert.bootstrap-min-partition</h5></td>
-            <td style="word-wrap: break-word;">(none)</td>
-            <td>String</td>
-            <td>The min partition bootstrap of rocksdb index for cross partition upsert (primary keys not contain all partition fields), bootstrap will only read the partitions above it, and the smaller partitions will not be read into the index. This can reduce job startup time and excessive initialization of index, but please note that this may also cause data duplication.</td>
-        </tr>
-        <tr>
             <td><h5>cross-partition-upsert.index-ttl</h5></td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Duration</td>
@@ -145,6 +139,12 @@ under the License.
             <td style="word-wrap: break-word;">true</td>
             <td>Boolean</td>
             <td>Whether only overwrite dynamic partition when overwriting a partitioned table with dynamic partition columns. Works only when the table has partition keys.</td>
+        </tr>
+        <tr>
+            <td><h5>file-reader-async-threshold</h5></td>
+            <td style="word-wrap: break-word;">10 mb</td>
+            <td>MemorySize</td>
+            <td>The threshold for read file async.</td>
         </tr>
         <tr>
             <td><h5>file.compression</h5></td>
@@ -598,12 +598,6 @@ This config option does not affect the default filesystem metastore.</td>
             <td style="word-wrap: break-word;">0 bytes</td>
             <td>MemorySize</td>
             <td>Cache size for reading manifest files for write initialization.</td>
-        </tr>
-        <tr>
-            <td><h5>write-mode</h5></td>
-            <td style="word-wrap: break-word;">auto</td>
-            <td><p>Enum</p></td>
-            <td>Specify the write mode for table.<br /><br />Possible values:<ul><li>"auto": The change-log for table with primary key, append-only for table without primary key.</li><li>"append-only": The table can only accept append-only insert operations. Neither data deduplication nor any primary key constraints will be done when inserting rows into paimon.</li><li>"change-log": The table can accept insert/delete/update operations.</li></ul></td>
         </tr>
         <tr>
             <td><h5>write-only</h5></td>

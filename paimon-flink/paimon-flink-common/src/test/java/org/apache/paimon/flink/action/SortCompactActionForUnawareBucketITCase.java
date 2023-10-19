@@ -31,6 +31,7 @@ import org.apache.paimon.predicate.PredicateBuilder;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.AppendOnlyFileStoreTable;
 import org.apache.paimon.table.Table;
+import org.apache.paimon.table.sink.BatchTableCommit;
 import org.apache.paimon.table.sink.BatchTableWrite;
 import org.apache.paimon.table.sink.BatchWriteBuilder;
 import org.apache.paimon.table.sink.CommitMessage;
@@ -264,7 +265,7 @@ public class SortCompactActionForUnawareBucketITCase extends ActionITCaseBase {
     private void callProcedure(String orderStrategy, List<String> orderByColumns) {
         callProcedure(
                 String.format(
-                        "CALL compact('%s.%s', 'ALL', '%s', '%s')",
+                        "CALL sys.compact('%s.%s', 'ALL', '%s', '%s')",
                         database, tableName, orderStrategy, String.join(",", orderByColumns)),
                 false,
                 true);
@@ -280,7 +281,9 @@ public class SortCompactActionForUnawareBucketITCase extends ActionITCaseBase {
     }
 
     private void commit(List<CommitMessage> messages) throws Exception {
-        getTable().newBatchWriteBuilder().newCommit().commit(messages);
+        BatchTableCommit commit = getTable().newBatchWriteBuilder().newCommit();
+        commit.commit(messages);
+        commit.close();
     }
 
     // schema with all the basic types.

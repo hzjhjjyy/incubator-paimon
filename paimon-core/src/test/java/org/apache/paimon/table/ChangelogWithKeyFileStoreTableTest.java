@@ -21,7 +21,6 @@ package org.apache.paimon.table;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.CoreOptions.ChangelogProducer;
 import org.apache.paimon.KeyValue;
-import org.apache.paimon.WriteMode;
 import org.apache.paimon.data.BinaryString;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.data.InternalRow;
@@ -66,6 +65,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +111,43 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
                             + COMPATIBILITY_BATCH_ROW_TO_STRING.apply(rowData);
 
     @Test
+    public void testAsyncReader() throws Exception {
+        FileStoreTable table = createFileStoreTable();
+        table =
+                table.copy(
+                        Collections.singletonMap(
+                                CoreOptions.FILE_READER_ASYNC_THRESHOLD.key(), "1 b"));
+
+        Map<Integer, GenericRow> rows = new HashMap<>();
+        for (int i = 0; i < 20; i++) {
+            BatchWriteBuilder writeBuilder = table.newBatchWriteBuilder();
+            BatchTableWrite write = writeBuilder.newWrite();
+            BatchTableCommit commit = writeBuilder.newCommit();
+            for (int j = 0; j < 1000; j++) {
+                GenericRow row = rowData(1, i * j, 100L * i * j);
+                rows.put(row.getInt(1), row);
+                write.write(row);
+            }
+            commit.commit(write.prepareCommit());
+            write.close();
+            commit.close();
+        }
+
+        ReadBuilder readBuilder = table.newReadBuilder();
+        List<Split> splits = toSplits(table.newSnapshotReader().read().dataSplits());
+        TableRead read = readBuilder.newRead();
+
+        Function<InternalRow, String> toString =
+                r -> r.getInt(0) + "|" + r.getInt(1) + "|" + r.getLong(2);
+        String[] expected =
+                rows.values().stream()
+                        .sorted(Comparator.comparingInt(o -> o.getInt(1)))
+                        .map(toString)
+                        .toArray(String[]::new);
+        assertThat(getResult(read, splits, toString)).containsExactly(expected);
+    }
+
+    @Test
     public void testBatchWriteBuilder() throws Exception {
         FileStoreTable table = createFileStoreTable();
         BatchWriteBuilder writeBuilder = table.newBatchWriteBuilder();
@@ -151,6 +188,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         write.write(rowData(1, 11, 55L));
         commit.commit(1, write.prepareCommit(true, 1));
         write.close();
+        commit.close();
 
         List<Split> splits = toSplits(table.newSnapshotReader().read().dataSplits());
         TableRead read = table.newRead();
@@ -327,6 +365,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         write.write(rowDataWithKind(RowKind.UPDATE_AFTER, 1, 10, 102L));
         commit.commit(0, write.prepareCommit(true, 0));
         write.close();
+        commit.close();
 
         List<Split> splits =
                 toSplits(
@@ -425,6 +464,9 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         write.compact(binaryRow(1), 0, true);
         write.compact(binaryRow(2), 0, true);
         commit.commit(4, write.prepareCommit(true, 4));
+
+        write.close();
+        commit.close();
 
         splits =
                 toSplits(
@@ -530,6 +572,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         write.write(rowDataWithKind(RowKind.DELETE, 2, 10, 301L));
         commit.commit(2, write.prepareCommit(true, 2));
         write.close();
+        commit.close();
 
         assertNextSnapshot.apply(2);
 
@@ -560,6 +603,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         commit.commit(2, write.prepareCommit(true, 2));
 
         write.close();
+        commit.close();
     }
 
     @Override
@@ -624,6 +668,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         commit.commit(3, write.prepareCommit(true, 3));
 
         write.close();
+        commit.close();
 
         // cannot push down value filter b = 600L
         splits = toSplits(table.newSnapshotReader().read().dataSplits());
@@ -657,6 +702,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         write.write(rowDataWithKind(RowKind.DELETE, 1, 20, 400L));
         commit.commit(0, write.prepareCommit(true, 0));
         write.close();
+        commit.close();
 
         List<Split> splits = toSplits(table.newSnapshotReader().read().dataSplits());
         TableRead read = table.newRead();
@@ -687,6 +733,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         commit.commit(2, committables2);
 
         write.close();
+        commit.close();
 
         List<Split> splits = toSplits(table.newSnapshotReader().read().dataSplits());
         TableRead read = table.newRead();
@@ -728,6 +775,8 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         assertThat(splits1.get(0).dataFiles()).hasSize(1);
         assertThat(splits1.get(0).dataFiles().get(0).fileName())
                 .isNotEqualTo(splits0.get(0).dataFiles().get(0).fileName());
+        write.close();
+        commit.close();
     }
 
     @Test
@@ -900,6 +949,8 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
 
         result = getResult(read, toSplits(snapshotReader.read().dataSplits()), rowToString);
         assertThat(result).containsExactlyInAnyOrder("+I[1, 1, 2, 3]");
+        write.close();
+        commit.close();
     }
 
     @Test
@@ -962,6 +1013,7 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
         commit.commit(3, write.prepareCommit(true, 3));
 
         write.close();
+        commit.close();
 
         assertThat(
                         getResult(
@@ -1058,7 +1110,6 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
     protected FileStoreTable overwriteTestFileStoreTable() throws Exception {
         Options conf = new Options();
         conf.set(CoreOptions.PATH, tablePath.toString());
-        conf.set(CoreOptions.WRITE_MODE, WriteMode.CHANGE_LOG);
         TableSchema tableSchema =
                 SchemaUtils.forceCommit(
                         new SchemaManager(LocalFileIO.create(), tablePath),
@@ -1076,7 +1127,6 @@ public class ChangelogWithKeyFileStoreTableTest extends FileStoreTableTestBase {
             throws Exception {
         Options conf = new Options();
         conf.set(CoreOptions.PATH, tablePath.toString());
-        conf.set(CoreOptions.WRITE_MODE, WriteMode.CHANGE_LOG);
         configure.accept(conf);
         TableSchema tableSchema =
                 SchemaUtils.forceCommit(

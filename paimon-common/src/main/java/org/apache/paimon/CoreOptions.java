@@ -246,13 +246,6 @@ public class CoreOptions implements Serializable {
                     .defaultValue(MemorySize.parse("64 mb"))
                     .withDescription("Amount of data to spill records to disk in spilled sort.");
 
-    @Immutable
-    public static final ConfigOption<WriteMode> WRITE_MODE =
-            key("write-mode")
-                    .enumType(WriteMode.class)
-                    .defaultValue(WriteMode.AUTO)
-                    .withDescription("Specify the write mode for table.");
-
     public static final ConfigOption<Boolean> WRITE_ONLY =
             key("write-only")
                     .booleanType()
@@ -887,22 +880,18 @@ public class CoreOptions implements Serializable {
                                     + "this can avoid maintaining too many indexes and lead to worse and worse performance, "
                                     + "but please note that this may also cause data duplication.");
 
-    public static final ConfigOption<String> CROSS_PARTITION_UPSERT_BOOTSTRAP_MIN_PARTITION =
-            key("cross-partition-upsert.bootstrap-min-partition")
-                    .stringType()
-                    .noDefaultValue()
-                    .withDescription(
-                            "The min partition bootstrap of rocksdb index for cross partition upsert (primary keys not contain all partition fields), "
-                                    + "bootstrap will only read the partitions above it, and the smaller partitions will not be read into the index. "
-                                    + "This can reduce job startup time and excessive initialization of index, "
-                                    + "but please note that this may also cause data duplication.");
-
     public static final ConfigOption<Integer> ZORDER_VAR_LENGTH_CONTRIBUTION =
             key("zorder.var-length-contribution")
                     .intType()
                     .defaultValue(8)
                     .withDescription(
                             "The bytes of types (CHAR, VARCHAR, BINARY, VARBINARY) devote to the zorder sort.");
+
+    public static final ConfigOption<MemorySize> FILE_READER_ASYNC_THRESHOLD =
+            key("file-reader-async-threshold")
+                    .memoryType()
+                    .defaultValue(MemorySize.ofMebiBytes(10))
+                    .withDescription("The threshold for read file async.");
 
     private final Options options;
 
@@ -990,6 +979,10 @@ public class CoreOptions implements Serializable {
 
     public String fileCompression() {
         return options.get(FILE_COMPRESSION);
+    }
+
+    public MemorySize fileReaderAsyncThreshold() {
+        return options.get(FILE_READER_ASYNC_THRESHOLD);
     }
 
     public int snapshotNumRetainMin() {
@@ -1222,10 +1215,6 @@ public class CoreOptions implements Serializable {
         return Arrays.asList(padding.split(","));
     }
 
-    public WriteMode writeMode() {
-        return options.get(WRITE_MODE);
-    }
-
     public boolean writeOnly() {
         return options.get(WRITE_ONLY);
     }
@@ -1336,10 +1325,6 @@ public class CoreOptions implements Serializable {
 
     public Duration crossPartitionUpsertIndexTtl() {
         return options.get(CROSS_PARTITION_UPSERT_INDEX_TTL);
-    }
-
-    public String crossPartitionUpsertBootstrapMinPartition() {
-        return options.get(CROSS_PARTITION_UPSERT_BOOTSTRAP_MIN_PARTITION);
     }
 
     public int varTypeSize() {

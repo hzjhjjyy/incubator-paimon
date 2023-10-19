@@ -125,6 +125,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                 Snapshot snapshot = snapshotManager.snapshot(snapshotManager.latestSnapshotId());
                 assertThat(snapshot.id()).isEqualTo(2);
                 assertThat(snapshot.commitKind()).isEqualTo(Snapshot.CommitKind.APPEND);
+                write.close();
+                commit.close();
             }
         }
 
@@ -135,7 +137,7 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                     .build(env);
             env.execute();
         } else {
-            callProcedure(String.format("CALL compact_database('', '%s')", mode), false, true);
+            callProcedure(String.format("CALL sys.compact_database('', '%s')", mode), false, true);
         }
 
         for (FileStoreTable table : tables) {
@@ -198,6 +200,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                 StreamTableScan scan = table.newReadBuilder().newStreamScan();
                 TableScan.Plan plan = scan.plan();
                 assertThat(plan.splits()).isEmpty();
+                write.close();
+                commit.close();
             }
         }
 
@@ -218,10 +222,10 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
             env.executeAsync();
         } else {
             if (mode.equals("divided")) {
-                callProcedure("CALL compact_database()", true, false);
+                callProcedure("CALL sys.compact_database()", true, false);
             } else {
                 callProcedure(
-                        "CALL compact_database('', 'combined', '', '', 'continuous.discovery-interval=1s')",
+                        "CALL sys.compact_database('', 'combined', '', '', 'continuous.discovery-interval=1s')",
                         true,
                         false);
             }
@@ -275,6 +279,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                     Duration.ofSeconds(100),
                     String.format(
                             "Cannot validate snapshot expiration in %s milliseconds.", 60_000));
+            write.close();
+            commit.close();
         }
 
         // In combined mode, check whether newly created table can be detected
@@ -310,6 +316,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                             snapshotManager.snapshot(snapshotManager.latestSnapshotId());
                     assertThat(snapshot.id()).isEqualTo(1);
                     assertThat(snapshot.commitKind()).isEqualTo(Snapshot.CommitKind.APPEND);
+                    write.close();
+                    commit.close();
                 }
             }
 
@@ -364,6 +372,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                         Duration.ofSeconds(100),
                         String.format(
                                 "Cannot validate snapshot expiration in %s milliseconds.", 60_000));
+                write.close();
+                commit.close();
             }
         }
     }
@@ -457,6 +467,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
                 Snapshot snapshot = snapshotManager.snapshot(snapshotManager.latestSnapshotId());
                 assertThat(snapshot.id()).isEqualTo(2);
                 assertThat(snapshot.commitKind()).isEqualTo(Snapshot.CommitKind.APPEND);
+                write.close();
+                commit.close();
             }
         }
 
@@ -478,14 +490,14 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
             if (mode.equals("divided")) {
                 callProcedure(
                         String.format(
-                                "CALL compact_database('', 'divided', '%s', '%s')",
+                                "CALL sys.compact_database('', 'divided', '%s', '%s')",
                                 nonNull(includingPattern), nonNull(excludesPattern)),
                         false,
                         true);
             } else {
                 callProcedure(
                         String.format(
-                                "CALL compact_database('', 'combined', '%s', '%s', 'continuous.discovery-interval=1s')",
+                                "CALL sys.compact_database('', 'combined', '%s', '%s', 'continuous.discovery-interval=1s')",
                                 nonNull(includingPattern), nonNull(excludesPattern)),
                         false,
                         true);
@@ -566,6 +578,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
             Snapshot snapshot = snapshotManager.snapshot(snapshotManager.latestSnapshotId());
             assertThat(snapshot.id()).isEqualTo(2);
             assertThat(snapshot.commitKind()).isEqualTo(Snapshot.CommitKind.APPEND);
+            write.close();
+            commit.close();
         }
 
         if (ThreadLocalRandom.current().nextBoolean()) {
@@ -573,7 +587,7 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
             new CompactDatabaseAction(warehouse, new HashMap<>()).build(env);
             env.executeAsync();
         } else {
-            callProcedure("CALL compact_database()");
+            callProcedure("CALL sys.compact_database()");
         }
 
         for (FileStoreTable table : tables) {
@@ -592,6 +606,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
 
             // second compaction, snapshot will be 5
             checkFileAndRowSize(table, 5L, 30_000L, 1, 9);
+            write.close();
+            commit.close();
         }
     }
 
@@ -633,6 +649,8 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
             Snapshot snapshot = snapshotManager.snapshot(snapshotManager.latestSnapshotId());
             assertThat(snapshot.id()).isEqualTo(2);
             assertThat(snapshot.commitKind()).isEqualTo(Snapshot.CommitKind.APPEND);
+            write.close();
+            commit.close();
         }
 
         if (ThreadLocalRandom.current().nextBoolean()) {
@@ -640,7 +658,7 @@ public class CompactDatabaseActionITCase extends CompactActionITCaseBase {
             new CompactDatabaseAction(warehouse, new HashMap<>()).build(env);
             env.execute();
         } else {
-            callProcedure("CALL compact_database()", false, true);
+            callProcedure("CALL sys.compact_database()", false, true);
         }
 
         for (FileStoreTable table : tables) {
