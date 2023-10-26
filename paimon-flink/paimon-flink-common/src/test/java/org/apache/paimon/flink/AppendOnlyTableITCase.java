@@ -18,7 +18,9 @@
 
 package org.apache.paimon.flink;
 
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.Snapshot;
+import org.apache.paimon.utils.BlockingIterator;
 
 import org.apache.flink.table.planner.factories.TestValuesTableFactory;
 import org.apache.flink.types.Row;
@@ -47,6 +49,18 @@ public class AppendOnlyTableITCase extends CatalogITCaseBase {
                 .hasRootCauseInstanceOf(RuntimeException.class)
                 .hasRootCauseMessage(
                         "Cannot define 'bucket-key' in unaware or dynamic bucket mode.");
+    }
+
+    @Test
+    public void testCreateUnawareBucketTableWithFullCompaction() {
+        assertThatThrownBy(
+                        () ->
+                                batchSql(
+                                        "CREATE TABLE pk_table (id INT, data STRING) "
+                                                + "WITH ('bucket' = '-1','full-compaction.delta-commits'='10')"))
+                .hasRootCauseInstanceOf(RuntimeException.class)
+                .hasRootCauseMessage(
+                        "AppendOnlyTable of unware or dynamic bucket does not support 'full-compaction.delta-commits'");
     }
 
     @Test
@@ -227,6 +241,22 @@ public class AppendOnlyTableITCase extends CatalogITCaseBase {
                                 LocalDateTime.parse("2023-02-03T20:20:20")
                                         .atZone(ZoneId.systemDefault())
                                         .toInstant()));
+    }
+
+    @Test
+    public void testDynamicOptions() throws Exception {
+        sql("CREATE TABLE T (id INT) WITH ('write-mode'='append-only')");
+        batchSql("INSERT INTO T VALUES (1)");
+        sEnv.getConfig()
+                .getConfiguration()
+                .setString(
+                        "paimon.*.*.T." + CoreOptions.SCAN_MODE.key(),
+                        CoreOptions.StartupMode.LATEST.toString());
+        BlockingIterator<Row, Row> iterator = streamSqlBlockIter("SELECT * FROM T");
+
+        sql("INSERT INTO T VALUES (2)");
+        // Only fetch latest snapshot is, dynamic option worked
+        assertThat(iterator.collect(1)).containsExactlyInAnyOrder(Row.of(2));
     }
 
     @Override

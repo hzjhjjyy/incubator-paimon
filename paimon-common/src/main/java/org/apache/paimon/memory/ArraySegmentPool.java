@@ -16,32 +16,40 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.metrics.groups;
+package org.apache.paimon.memory;
 
-import org.apache.paimon.metrics.AbstractMetricGroup;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
 
-import java.util.HashMap;
-import java.util.Map;
+/** A {@link MemorySegmentPool} for allocated segments. */
+public class ArraySegmentPool implements MemorySegmentPool {
 
-/** A simple named {@link org.apache.paimon.metrics.MetricGroup} that is untagged. */
-public class GenericMetricGroup extends AbstractMetricGroup {
+    private final Queue<MemorySegment> segments;
+    private final int pageSize;
 
-    private final String groupName;
-
-    GenericMetricGroup(final Map<String, String> tags, final String groupName) {
-        super(tags);
-        this.groupName = groupName;
-    }
-
-    public static GenericMetricGroup createGenericMetricGroup(
-            final String table, final String groupName) {
-        Map<String, String> tags = new HashMap<>();
-        tags.put("table", table);
-        return new GenericMetricGroup(tags, groupName);
+    public ArraySegmentPool(List<MemorySegment> segments) {
+        this.segments = new LinkedList<>(segments);
+        this.pageSize = segments.get(0).size();
     }
 
     @Override
-    public String getGroupName() {
-        return groupName;
+    public int pageSize() {
+        return pageSize;
+    }
+
+    @Override
+    public void returnAll(List<MemorySegment> memory) {
+        segments.addAll(memory);
+    }
+
+    @Override
+    public int freePages() {
+        return segments.size();
+    }
+
+    @Override
+    public MemorySegment nextSegment() {
+        return segments.poll();
     }
 }

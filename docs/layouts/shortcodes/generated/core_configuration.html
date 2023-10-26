@@ -117,6 +117,12 @@ under the License.
             <td>The discovery interval of continuous reading.</td>
         </tr>
         <tr>
+            <td><h5>cross-partition-upsert.bootstrap-parallelism</h5></td>
+            <td style="word-wrap: break-word;">10</td>
+            <td>Integer</td>
+            <td>The parallelism for bootstrap in a single task for cross partition upsert.</td>
+        </tr>
+        <tr>
             <td><h5>cross-partition-upsert.index-ttl</h5></td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Duration</td>
@@ -298,6 +304,18 @@ Mainly to resolve data skew on primary keys. We recommend starting with 64 mb wh
             <td>Whether to create this table as a partitioned table in metastore.
 For example, if you want to list all partitions of a Paimon table in Hive, you need to create this table as a partitioned table in Hive metastore.
 This config option does not affect the default filesystem metastore.</td>
+        </tr>
+        <tr>
+            <td><h5>metastore.tag-to-partition</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>String</td>
+            <td>Whether to create this table as a partitioned table for mapping non-partitioned table tags in metastore. This allows the Hive engine to view this table in a partitioned table view and use partitioning field to read specific partitions (specific tags).</td>
+        </tr>
+        <tr>
+            <td><h5>metastore.tag-to-partition.preview</h5></td>
+            <td style="word-wrap: break-word;">none</td>
+            <td><p>Enum</p></td>
+            <td>Whether to preview tag of generated snapshots in metastore. This allows the Hive engine to query specific tag before creation.<br /><br />Possible values:<ul><li>"none": No automatically created tags.</li><li>"process-time": Based on the time of the machine, create TAG once the processing time passes period time plus delay.</li><li>"watermark": Based on the watermark of the input, create TAG once the watermark passes period time plus delay.</li></ul></td>
         </tr>
         <tr>
             <td><h5>num-levels</h5></td>
@@ -550,6 +568,18 @@ This config option does not affect the default filesystem metastore.</td>
             <td style="word-wrap: break-word;">none</td>
             <td><p>Enum</p></td>
             <td>Whether to create tag automatically. And how to generate tags.<br /><br />Possible values:<ul><li>"none": No automatically created tags.</li><li>"process-time": Based on the time of the machine, create TAG once the processing time passes period time plus delay.</li><li>"watermark": Based on the watermark of the input, create TAG once the watermark passes period time plus delay.</li></ul></td>
+        </tr>
+        <tr>
+            <td><h5>tag.callback.#.param</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>String</td>
+            <td>Parameter string for the constructor of class #. Callback class should parse the parameter by itself.</td>
+        </tr>
+        <tr>
+            <td><h5>tag.callbacks</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>String</td>
+            <td>A list of commit callback classes to be called after a successful tag. Class names are connected with comma (example: com.test.CallbackA,com.sample.CallbackB).</td>
         </tr>
         <tr>
             <td><h5>tag.creation-delay</h5></td>
