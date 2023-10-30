@@ -16,37 +16,16 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.disk;
-
-import org.apache.paimon.annotation.Public;
-import org.apache.paimon.disk.FileIOChannel.Enumerator;
-import org.apache.paimon.disk.FileIOChannel.ID;
+package org.apache.paimon.utils;
 
 import java.io.IOException;
 
-/**
- * The facade for the provided disk I/O services.
- *
- * @since 0.4.0
- */
-@Public
-public interface IOManager extends AutoCloseable {
+/** An iterator for Key and Value. */
+public interface KeyValueIterator<K, V> {
 
-    ID createChannel();
+    boolean advanceNext() throws IOException;
 
-    String[] tempDirs();
+    K getKey();
 
-    Enumerator createChannelEnumerator();
-
-    BufferFileWriter createBufferFileWriter(ID channelID) throws IOException;
-
-    BufferFileReader createBufferFileReader(ID channelID) throws IOException;
-
-    static IOManager create(String tempDir) {
-        return create(new String[] {tempDir});
-    }
-
-    static IOManager create(String[] tempDirs) {
-        return new IOManagerImpl(tempDirs);
-    }
+    V getValue();
 }

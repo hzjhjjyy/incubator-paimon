@@ -16,37 +16,24 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.disk;
+package org.apache.paimon.flink.metrics;
 
-import org.apache.paimon.annotation.Public;
-import org.apache.paimon.disk.FileIOChannel.Enumerator;
-import org.apache.paimon.disk.FileIOChannel.ID;
+import org.apache.paimon.metrics.MetricGroup;
+import org.apache.paimon.metrics.MetricRegistry;
 
-import java.io.IOException;
+import java.util.Map;
 
-/**
- * The facade for the provided disk I/O services.
- *
- * @since 0.4.0
- */
-@Public
-public interface IOManager extends AutoCloseable {
+/** {@link MetricRegistry} to create {@link FlinkMetricGroup}. */
+public class FlinkMetricRegistry extends MetricRegistry {
 
-    ID createChannel();
+    private final org.apache.flink.metrics.MetricGroup group;
 
-    String[] tempDirs();
-
-    Enumerator createChannelEnumerator();
-
-    BufferFileWriter createBufferFileWriter(ID channelID) throws IOException;
-
-    BufferFileReader createBufferFileReader(ID channelID) throws IOException;
-
-    static IOManager create(String tempDir) {
-        return create(new String[] {tempDir});
+    public FlinkMetricRegistry(org.apache.flink.metrics.MetricGroup group) {
+        this.group = group;
     }
 
-    static IOManager create(String[] tempDirs) {
-        return new IOManagerImpl(tempDirs);
+    @Override
+    protected MetricGroup createMetricGroup(String groupName, Map<String, String> variables) {
+        return new FlinkMetricGroup(group, groupName, variables);
     }
 }

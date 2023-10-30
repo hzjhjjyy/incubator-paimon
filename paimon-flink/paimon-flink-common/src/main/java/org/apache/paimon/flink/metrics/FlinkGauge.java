@@ -16,37 +16,21 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.disk;
+package org.apache.paimon.flink.metrics;
 
-import org.apache.paimon.annotation.Public;
-import org.apache.paimon.disk.FileIOChannel.Enumerator;
-import org.apache.paimon.disk.FileIOChannel.ID;
+import org.apache.paimon.metrics.Gauge;
 
-import java.io.IOException;
+/** {@link Gauge} which wraps a Flink's {@link org.apache.flink.metrics.Gauge}. */
+public class FlinkGauge<T> implements Gauge<T> {
 
-/**
- * The facade for the provided disk I/O services.
- *
- * @since 0.4.0
- */
-@Public
-public interface IOManager extends AutoCloseable {
+    private final org.apache.flink.metrics.Gauge<T> wrapped;
 
-    ID createChannel();
-
-    String[] tempDirs();
-
-    Enumerator createChannelEnumerator();
-
-    BufferFileWriter createBufferFileWriter(ID channelID) throws IOException;
-
-    BufferFileReader createBufferFileReader(ID channelID) throws IOException;
-
-    static IOManager create(String tempDir) {
-        return create(new String[] {tempDir});
+    public FlinkGauge(org.apache.flink.metrics.Gauge<T> wrapped) {
+        this.wrapped = wrapped;
     }
 
-    static IOManager create(String[] tempDirs) {
-        return new IOManagerImpl(tempDirs);
+    @Override
+    public T getValue() {
+        return wrapped.getValue();
     }
 }

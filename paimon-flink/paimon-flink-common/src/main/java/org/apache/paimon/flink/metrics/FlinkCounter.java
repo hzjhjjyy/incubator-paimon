@@ -16,37 +16,41 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.disk;
+package org.apache.paimon.flink.metrics;
 
-import org.apache.paimon.annotation.Public;
-import org.apache.paimon.disk.FileIOChannel.Enumerator;
-import org.apache.paimon.disk.FileIOChannel.ID;
+import org.apache.paimon.metrics.Counter;
 
-import java.io.IOException;
+/** {@link Counter} which wraps a Flink's {@link org.apache.flink.metrics.Counter}. */
+public class FlinkCounter implements Counter {
 
-/**
- * The facade for the provided disk I/O services.
- *
- * @since 0.4.0
- */
-@Public
-public interface IOManager extends AutoCloseable {
+    private final org.apache.flink.metrics.Counter wrapped;
 
-    ID createChannel();
-
-    String[] tempDirs();
-
-    Enumerator createChannelEnumerator();
-
-    BufferFileWriter createBufferFileWriter(ID channelID) throws IOException;
-
-    BufferFileReader createBufferFileReader(ID channelID) throws IOException;
-
-    static IOManager create(String tempDir) {
-        return create(new String[] {tempDir});
+    public FlinkCounter(org.apache.flink.metrics.Counter wrapped) {
+        this.wrapped = wrapped;
     }
 
-    static IOManager create(String[] tempDirs) {
-        return new IOManagerImpl(tempDirs);
+    @Override
+    public void inc() {
+        wrapped.inc();
+    }
+
+    @Override
+    public void inc(long n) {
+        wrapped.inc(n);
+    }
+
+    @Override
+    public void dec() {
+        wrapped.dec();
+    }
+
+    @Override
+    public void dec(long n) {
+        wrapped.dec(n);
+    }
+
+    @Override
+    public long getCount() {
+        return wrapped.getCount();
     }
 }
