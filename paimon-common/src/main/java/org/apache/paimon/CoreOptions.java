@@ -477,18 +477,21 @@ public class CoreOptions implements Serializable {
                                     + "Note: Scale-up this parameter will increase memory usage while scanning manifest files. "
                                     + "We can consider downsize it when we encounter an out of memory exception while scanning");
 
+    @ExcludeFromDocumentation("Confused without log system")
     public static final ConfigOption<LogConsistency> LOG_CONSISTENCY =
             key("log.consistency")
                     .enumType(LogConsistency.class)
                     .defaultValue(LogConsistency.TRANSACTIONAL)
                     .withDescription("Specify the log consistency mode for table.");
 
+    @ExcludeFromDocumentation("Confused without log system")
     public static final ConfigOption<LogChangelogMode> LOG_CHANGELOG_MODE =
             key("log.changelog-mode")
                     .enumType(LogChangelogMode.class)
                     .defaultValue(LogChangelogMode.AUTO)
                     .withDescription("Specify the log changelog mode for table.");
 
+    @ExcludeFromDocumentation("Confused without log system")
     public static final ConfigOption<String> LOG_KEY_FORMAT =
             key("log.key.format")
                     .stringType()
@@ -496,6 +499,7 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "Specify the key message format of log system with primary key.");
 
+    @ExcludeFromDocumentation("Confused without log system")
     public static final ConfigOption<String> LOG_FORMAT =
             key("log.format")
                     .stringType()
@@ -704,6 +708,12 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "The expiration interval of consumer files. A consumer file will be expired if "
                                     + "it's lifetime after last modification is over this value.");
+
+    public static final ConfigOption<ConsumerMode> CONSUMER_CONSISTENCY_MODE =
+            key("consumer.mode")
+                    .enumType(ConsumerMode.class)
+                    .defaultValue(ConsumerMode.EXACTLY_ONCE)
+                    .withDescription("Specify the consumer consistency mode for table.");
 
     public static final ConfigOption<Long> DYNAMIC_BUCKET_TARGET_ROW_NUM =
             key("dynamic-bucket.target-row-num")
@@ -1301,6 +1311,10 @@ public class CoreOptions implements Serializable {
 
     public Duration consumerExpireTime() {
         return options.get(CONSUMER_EXPIRATION_TIME);
+    }
+
+    public ConsumerMode consumerWithLegacyMode() {
+        return options.get(CONSUMER_CONSISTENCY_MODE);
     }
 
     public boolean partitionedTableInMetastore() {
@@ -1933,6 +1947,35 @@ public class CoreOptions implements Serializable {
         private final String description;
 
         ExpireExecutionMode(String value, String description) {
+            this.value = value;
+            this.description = description;
+        }
+
+        @Override
+        public String toString() {
+            return value;
+        }
+
+        @Override
+        public InlineElement getDescription() {
+            return text(description);
+        }
+    }
+
+    /** Specifies the log consistency mode for table. */
+    public enum ConsumerMode implements DescribedEnum {
+        EXACTLY_ONCE(
+                "exactly-once",
+                "Readers consume data at snapshot granularity, and strictly ensure that the snapshot-id recorded in the consumer is the snapshot-id + 1 that all readers have exactly consumed."),
+
+        AT_LEAST_ONCE(
+                "at-least-once",
+                "Each reader consumes snapshots at a different rate, and the snapshot with the slowest consumption progress among all readers will be recorded in the consumer.");
+
+        private final String value;
+        private final String description;
+
+        ConsumerMode(String value, String description) {
             this.value = value;
             this.description = description;
         }
