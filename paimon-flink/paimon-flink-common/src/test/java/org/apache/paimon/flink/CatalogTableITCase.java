@@ -755,22 +755,38 @@ public class CatalogTableITCase extends CatalogITCaseBase {
     }
 
     @Test
-    public void testAlterTableNonPhysicalColumn() {
-        sql(
-                "CREATE TABLE T (a INT,  c ROW < a INT, d INT> METADATA, b INT, ts TIMESTAMP(3), WATERMARK FOR ts AS ts)");
-        sql("ALTER TABLE T ADD e VARCHAR METADATA");
-        sql("ALTER TABLE T DROP c ");
-        sql("ALTER TABLE T RENAME e TO ee");
+    public void testShowTableMetadataComment() {
+        sql("CREATE TABLE T (a INT, name VARCHAR METADATA COMMENT 'header1', b INT)");
         List<Row> result = sql("SHOW CREATE TABLE T");
         assertThat(result.get(0).toString())
                 .contains(
                         "CREATE TABLE `PAIMON`.`default`.`T` (\n"
                                 + "  `a` INT,\n"
-                                + "  `b` INT,\n"
-                                + "  `ts` TIMESTAMP(3),\n"
-                                + "  `ee` VARCHAR(2147483647) METADATA,\n"
-                                + "  WATERMARK FOR `ts` AS `ts`\n"
-                                + ") ")
+                                + "  `name` VARCHAR(2147483647) METADATA COMMENT 'header1',\n"
+                                + "  `b` INT\n"
+                                + ")")
                 .doesNotContain("schema");
+    }
+
+    @Test
+    public void testReadOptimizedTable() {
+        sql("CREATE TABLE T (k INT, v INT, PRIMARY KEY (k) NOT ENFORCED)");
+
+        // full compaction will always be performed at the end of batch jobs, as long as
+        // full-compaction.delta-commits is set, regardless of its value
+        sql(
+                "INSERT INTO T /*+ OPTIONS('full-compaction.delta-commits' = '100') */ VALUES (1, 10), (2, 20)");
+        List<Row> result = sql("SELECT k, v FROM T$ro ORDER BY k");
+        assertThat(result).containsExactly(Row.of(1, 10), Row.of(2, 20));
+
+        // no compaction, so result of ro table does not change
+        sql("INSERT INTO T VALUES (1, 11), (3, 30)");
+        result = sql("SELECT k, v FROM T$ro ORDER BY k");
+        assertThat(result).containsExactly(Row.of(1, 10), Row.of(2, 20));
+
+        sql(
+                "INSERT INTO T /*+ OPTIONS('full-compaction.delta-commits' = '100') */ VALUES (2, 21), (3, 31)");
+        result = sql("SELECT k, v FROM T$ro ORDER BY k");
+        assertThat(result).containsExactly(Row.of(1, 11), Row.of(2, 21), Row.of(3, 31));
     }
 }
