@@ -33,13 +33,13 @@ import org.apache.paimon.partition.PartitionPredicate;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.schema.TableSchema;
-import org.apache.paimon.stats.FieldStatsArraySerializer;
+import org.apache.paimon.stats.BinaryTableStats;
 import org.apache.paimon.table.source.ScanMode;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.FileStorePathFactory;
 import org.apache.paimon.utils.Filter;
 import org.apache.paimon.utils.Pair;
-import org.apache.paimon.utils.ParallellyExecuteUtils;
+import org.apache.paimon.utils.ScanParallelExecutor;
 import org.apache.paimon.utils.SnapshotManager;
 
 import javax.annotation.Nullable;
@@ -61,7 +61,6 @@ import static org.apache.paimon.utils.Preconditions.checkState;
 /** Default implementation of {@link FileStoreScan}. */
 public abstract class AbstractFileStoreScan implements FileStoreScan {
 
-    private final FieldStatsArraySerializer partitionStatsConverter;
     private final RowType partitionType;
     private final SnapshotManager snapshotManager;
     private final ManifestFile.Factory manifestFileFactory;
@@ -96,7 +95,6 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
             int numOfBuckets,
             boolean checkNumOfBuckets,
             Integer scanManifestParallelism) {
-        this.partitionStatsConverter = new FieldStatsArraySerializer(partitionType);
         this.partitionType = partitionType;
         this.bucketKeyFilter = bucketKeyFilter;
         this.snapshotManager = snapshotManager;
@@ -112,7 +110,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
     @Override
     public FileStoreScan withPartitionFilter(Predicate predicate) {
         if (partitionType.getFieldCount() > 0 && predicate != null) {
-            this.partitionFilter = PartitionPredicate.fromPredicate(partitionType, predicate);
+            this.partitionFilter = PartitionPredicate.fromPredicate(predicate);
         } else {
             this.partitionFilter = null;
         }
@@ -261,7 +259,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
 
         AtomicLong cntEntries = new AtomicLong(0);
         Iterable<ManifestEntry> entries =
-                ParallellyExecuteUtils.parallelismBatchIterable(
+                ScanParallelExecutor.parallelismBatchIterable(
                         files -> {
                             List<ManifestEntry> entryList =
                                     files.parallelStream()
@@ -379,10 +377,17 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
 
     /** Note: Keep this thread-safe. */
     private boolean filterManifestFileMeta(ManifestFileMeta manifest) {
+        if (partitionFilter == null) {
+            return true;
+        }
+
+        BinaryTableStats stats = manifest.partitionStats();
         return partitionFilter == null
                 || partitionFilter.test(
                         manifest.numAddedFiles() + manifest.numDeletedFiles(),
-                        manifest.partitionStats().fields(partitionStatsConverter));
+                        stats.minValues(),
+                        stats.maxValues(),
+                        stats.nullCounts());
     }
 
     /** Note: Keep this thread-safe. */

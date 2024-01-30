@@ -23,13 +23,14 @@ import org.apache.paimon.manifest.ManifestCacheFilter;
 import org.apache.paimon.manifest.ManifestFile;
 import org.apache.paimon.manifest.ManifestList;
 import org.apache.paimon.operation.FileStoreCommit;
-import org.apache.paimon.operation.FileStoreExpire;
 import org.apache.paimon.operation.FileStoreRead;
 import org.apache.paimon.operation.FileStoreScan;
 import org.apache.paimon.operation.FileStoreWrite;
 import org.apache.paimon.operation.PartitionExpire;
 import org.apache.paimon.operation.SnapshotDeletion;
 import org.apache.paimon.operation.TagDeletion;
+import org.apache.paimon.service.ServiceManager;
+import org.apache.paimon.stats.StatsFileHandler;
 import org.apache.paimon.table.BucketMode;
 import org.apache.paimon.table.sink.TagCallback;
 import org.apache.paimon.tag.TagAutoCreation;
@@ -68,6 +69,8 @@ public interface FileStore<T> extends Serializable {
 
     IndexFileHandler newIndexFileHandler();
 
+    StatsFileHandler newStatsFileHandler();
+
     FileStoreRead<T> newRead();
 
     FileStoreWrite<T> newWrite(String commitUser);
@@ -75,8 +78,6 @@ public interface FileStore<T> extends Serializable {
     FileStoreWrite<T> newWrite(String commitUser, ManifestCacheFilter manifestFilter);
 
     FileStoreCommit newCommit(String commitUser);
-
-    FileStoreExpire newExpire();
 
     SnapshotDeletion newSnapshotDeletion();
 
@@ -89,6 +90,8 @@ public interface FileStore<T> extends Serializable {
 
     @Nullable
     TagAutoCreation newTagCreationManager();
+
+    ServiceManager newServiceManager();
 
     boolean mergeSchema(RowType rowType, boolean allowExplicitCast);
 

@@ -36,7 +36,6 @@ import org.apache.paimon.mergetree.compact.MergeFunctionFactory;
 import org.apache.paimon.operation.AbstractFileStoreWrite;
 import org.apache.paimon.operation.FileStoreCommit;
 import org.apache.paimon.operation.FileStoreCommitImpl;
-import org.apache.paimon.operation.FileStoreExpireImpl;
 import org.apache.paimon.operation.FileStoreRead;
 import org.apache.paimon.operation.FileStoreScan;
 import org.apache.paimon.operation.Lock;
@@ -46,6 +45,8 @@ import org.apache.paimon.reader.RecordReaderIterator;
 import org.apache.paimon.schema.KeyValueFieldsExtractor;
 import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.table.CatalogEnvironment;
+import org.apache.paimon.table.ExpireSnapshots;
+import org.apache.paimon.table.ExpireSnapshotsImpl;
 import org.apache.paimon.table.sink.CommitMessageImpl;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.table.source.ScanMode;
@@ -134,16 +135,23 @@ public class TestFileStore extends KeyValueFileStore {
         return super.newCommit(commitUser);
     }
 
-    public FileStoreExpireImpl newExpire(
-            int numRetainedMin, int numRetainedMax, long millisRetained) {
-        return new FileStoreExpireImpl(
-                numRetainedMin,
-                numRetainedMax,
-                millisRetained,
-                snapshotManager(),
-                newSnapshotDeletion(),
-                new TagManager(fileIO, options.path()),
-                Integer.MAX_VALUE);
+    public ExpireSnapshots newExpire(int numRetainedMin, int numRetainedMax, long millisRetained) {
+        return newExpire(numRetainedMin, numRetainedMax, millisRetained, true);
+    }
+
+    public ExpireSnapshots newExpire(
+            int numRetainedMin,
+            int numRetainedMax,
+            long millisRetained,
+            boolean snapshotExpireCleanEmptyDirectories) {
+        return new ExpireSnapshotsImpl(
+                        snapshotManager(),
+                        newSnapshotDeletion(),
+                        new TagManager(fileIO, options.path()),
+                        snapshotExpireCleanEmptyDirectories)
+                .retainMax(numRetainedMax)
+                .retainMin(numRetainedMin)
+                .olderThanMills(System.currentTimeMillis() - millisRetained);
     }
 
     public List<Snapshot> commitData(

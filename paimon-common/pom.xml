@@ -25,7 +25,7 @@ under the License.
     <parent>
         <artifactId>paimon-parent</artifactId>
         <groupId>org.apache.paimon</groupId>
-        <version>0.7-SNAPSHOT</version>
+        <version>0.8-SNAPSHOT</version>
     </parent>
 
     <artifactId>paimon-common</artifactId>
@@ -48,6 +48,20 @@ under the License.
             <groupId>org.apache.paimon</groupId>
             <artifactId>paimon-shade-caffeine-2</artifactId>
             <version>${paimon.shade.caffeine.version}-${paimon.shade.version}</version>
+        </dependency>
+
+        <!-- From paimon-format -->
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>aircompressor</artifactId>
+            <version>${airlift.version}</version>
+        </dependency>
+
+        <!-- From paimon-bundle -->
+        <dependency>
+            <groupId>org.lz4</groupId>
+            <artifactId>lz4-java</artifactId>
+            <version>${lz4.version}</version>
         </dependency>
 
         <!-- Java compiler -->

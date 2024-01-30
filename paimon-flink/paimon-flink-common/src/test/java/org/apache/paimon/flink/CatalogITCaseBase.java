@@ -43,6 +43,8 @@ import org.apache.flink.table.operations.Operation;
 import org.apache.flink.table.operations.ddl.CreateCatalogOperation;
 import org.apache.flink.types.Row;
 import org.apache.flink.util.CloseableIterator;
+import org.assertj.core.api.Assertions;
+import org.assertj.core.api.ListAssert;
 import org.junit.jupiter.api.BeforeEach;
 
 import javax.annotation.Nullable;
@@ -51,9 +53,11 @@ import java.io.File;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.apache.flink.streaming.api.environment.ExecutionCheckpointingOptions.CHECKPOINTING_INTERVAL;
@@ -92,6 +96,17 @@ public abstract class CatalogITCaseBase extends AbstractTestBase {
 
         setParallelism(defaultParallelism());
         prepareEnv();
+    }
+
+    protected Table getPaimonTable(String tableName) {
+        FlinkCatalog flinkCatalog = (FlinkCatalog) tEnv.getCatalog(tEnv.getCurrentCatalog()).get();
+        try {
+            return flinkCatalog
+                    .catalog()
+                    .getTable(new Identifier(tEnv.getCurrentDatabase(), tableName));
+        } catch (org.apache.paimon.catalog.Catalog.TableNotExistException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     protected Map<String, String> catalogOptions() {
@@ -144,6 +159,26 @@ public abstract class CatalogITCaseBase extends AbstractTestBase {
         }
     }
 
+    protected void sqlAssertWithRetry(
+            String query, Consumer<ListAssert<Row>> checker, Object... args) {
+        long start = System.currentTimeMillis();
+        while (true) {
+            try (CloseableIterator<Row> iter =
+                    tEnv.executeSql(String.format(query, args)).collect()) {
+                try {
+                    checker.accept(Assertions.assertThat(ImmutableList.copyOf(iter)));
+                    return;
+                } catch (AssertionError e) {
+                    if (System.currentTimeMillis() - start >= 3 * 60 * 1000) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
     protected CloseableIterator<Row> streamSqlIter(String query, Object... args) {
         return sEnv.executeSql(String.format(query, args)).collect();
     }
@@ -193,5 +228,11 @@ public abstract class CatalogITCaseBase extends AbstractTestBase {
 
     protected String toWarehouse(String path) {
         return path;
+    }
+
+    protected List<Row> queryAndSort(String sql) {
+        return sql(sql).stream()
+                .sorted(Comparator.comparingInt(r -> r.getFieldAs(0)))
+                .collect(Collectors.toList());
     }
 }

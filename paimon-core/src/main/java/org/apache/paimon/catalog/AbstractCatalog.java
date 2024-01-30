@@ -18,6 +18,7 @@
 
 package org.apache.paimon.catalog;
 
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.factories.FactoryUtil;
 import org.apache.paimon.fs.FileIO;
@@ -29,7 +30,6 @@ import org.apache.paimon.options.Options;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.schema.SchemaChange;
 import org.apache.paimon.schema.TableSchema;
-import org.apache.paimon.table.AbstractFileStoreTable;
 import org.apache.paimon.table.CatalogEnvironment;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.FileStoreTableFactory;
@@ -58,6 +58,7 @@ public abstract class AbstractCatalog implements Catalog {
 
     public static final String DB_SUFFIX = ".db";
     protected static final String TABLE_DEFAULT_OPTION_PREFIX = "table-default.";
+    protected static final String DB_LOCATION_PROP = "location";
 
     protected final FileIO fileIO;
     protected final Map<String, String> tableDefaultOptions;
@@ -93,7 +94,7 @@ public abstract class AbstractCatalog implements Catalog {
     protected abstract boolean databaseExistsImpl(String databaseName);
 
     @Override
-    public void createDatabase(String name, boolean ignoreIfExists)
+    public void createDatabase(String name, boolean ignoreIfExists, Map<String, String> properties)
             throws DatabaseAlreadyExistException {
         if (isSystemDatabase(name)) {
             throw new ProcessSystemDatabaseException();
@@ -104,21 +105,34 @@ public abstract class AbstractCatalog implements Catalog {
             }
             throw new DatabaseAlreadyExistException(name);
         }
-
-        createDatabaseImpl(name);
+        createDatabaseImpl(name, properties);
     }
+
+    @Override
+    public Map<String, String> loadDatabaseProperties(String name)
+            throws DatabaseNotExistException {
+        if (isSystemDatabase(name)) {
+            return Collections.emptyMap();
+        }
+        if (!databaseExists(name)) {
+            throw new DatabaseNotExistException(name);
+        }
+        return loadDatabasePropertiesImpl(name);
+    }
+
+    protected abstract Map<String, String> loadDatabasePropertiesImpl(String name);
 
     @Override
     public void dropPartition(Identifier identifier, Map<String, String> partitionSpec)
             throws TableNotExistException {
         Table table = getTable(identifier);
-        AbstractFileStoreTable fileStoreTable = (AbstractFileStoreTable) table;
+        FileStoreTable fileStoreTable = (FileStoreTable) table;
         FileStoreCommit commit = fileStoreTable.store().newCommit(UUID.randomUUID().toString());
         commit.dropPartitions(
                 Collections.singletonList(partitionSpec), BatchWriteBuilder.COMMIT_IDENTIFIER);
     }
 
-    protected abstract void createDatabaseImpl(String name);
+    protected abstract void createDatabaseImpl(String name, Map<String, String> properties);
 
     @Override
     public void dropDatabase(String name, boolean ignoreIfNotExists, boolean cascade)
@@ -178,6 +192,7 @@ public abstract class AbstractCatalog implements Catalog {
         checkNotSystemTable(identifier, "createTable");
         validateIdentifierNameCaseInsensitive(identifier);
         validateFieldNameCaseInsensitive(schema.rowType().getFieldNames());
+        validateAutoCreateClose(schema.options());
 
         if (!databaseExists(identifier.getDatabaseName())) {
             throw new DatabaseNotExistException(identifier.getDatabaseName());
@@ -294,12 +309,18 @@ public abstract class AbstractCatalog implements Catalog {
                         lineageMetaFactory));
     }
 
-    @VisibleForTesting
+    /**
+     * Get warehouse path for specified database. If a catalog would like to provide individual path
+     * for each database, this method can be `Override` in that catalog.
+     *
+     * @param database The given database name
+     * @return The warehouse path for the database
+     */
     public Path newDatabasePath(String database) {
         return newDatabasePath(warehouse(), database);
     }
 
-    Map<String, Map<String, Path>> allTablePaths() {
+    public Map<String, Map<String, Path>> allTablePaths() {
         try {
             Map<String, Map<String, Path>> allPaths = new HashMap<>();
             for (String database : listDatabases()) {
@@ -315,6 +336,11 @@ public abstract class AbstractCatalog implements Catalog {
         }
     }
 
+    /**
+     * Get the warehouse path for the catalog if exists.
+     *
+     * @return The catalog warehouse path.
+     */
     public abstract String warehouse();
 
     public Map<String, String> options() {
@@ -326,7 +352,7 @@ public abstract class AbstractCatalog implements Catalog {
 
     @VisibleForTesting
     public Path getDataTableLocation(Identifier identifier) {
-        return newTableLocation(warehouse(), identifier);
+        return new Path(newDatabasePath(identifier.getDatabaseName()), identifier.getObjectName());
     }
 
     private static boolean isSpecifiedSystemTable(Identifier identifier) {
@@ -419,8 +445,6 @@ public abstract class AbstractCatalog implements Catalog {
             } else if (change instanceof SchemaChange.RenameColumn) {
                 SchemaChange.RenameColumn rename = (SchemaChange.RenameColumn) change;
                 fieldNames.add(rename.newName());
-            } else {
-                // do nothing
             }
         }
         validateFieldNameCaseInsensitive(fieldNames);
@@ -428,5 +452,16 @@ public abstract class AbstractCatalog implements Catalog {
 
     private void validateFieldNameCaseInsensitive(List<String> fieldNames) {
         validateCaseInsensitive(caseSensitive(), "Field", fieldNames);
+    }
+
+    private void validateAutoCreateClose(Map<String, String> options) {
+        checkArgument(
+                !Boolean.parseBoolean(
+                        options.getOrDefault(
+                                CoreOptions.AUTO_CREATE.key(),
+                                CoreOptions.AUTO_CREATE.defaultValue().toString())),
+                String.format(
+                        "The value of %s property should be %s.",
+                        CoreOptions.AUTO_CREATE.key(), Boolean.FALSE));
     }
 }
