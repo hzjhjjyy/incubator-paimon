@@ -22,12 +22,17 @@ import org.apache.paimon.CoreOptions.MergeEngine;
 import org.apache.paimon.KeyValue;
 import org.apache.paimon.codegen.RecordEqualiser;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.deletionvectors.DeletionVectorsMaintainer;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.KeyValueFileReaderFactory;
 import org.apache.paimon.io.KeyValueFileWriterFactory;
+import org.apache.paimon.lookup.LookupStrategy;
 import org.apache.paimon.mergetree.LookupLevels;
 import org.apache.paimon.mergetree.MergeSorter;
 import org.apache.paimon.mergetree.SortedRun;
+import org.apache.paimon.utils.FieldsComparator;
+
+import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -37,37 +42,48 @@ import java.util.List;
 import static org.apache.paimon.mergetree.compact.ChangelogMergeTreeRewriter.UpgradeStrategy.CHANGELOG_NO_REWRITE;
 import static org.apache.paimon.mergetree.compact.ChangelogMergeTreeRewriter.UpgradeStrategy.CHANGELOG_WITH_REWRITE;
 import static org.apache.paimon.mergetree.compact.ChangelogMergeTreeRewriter.UpgradeStrategy.NO_CHANGELOG;
+import static org.apache.paimon.utils.Preconditions.checkArgument;
 
 /**
  * A {@link MergeTreeCompactRewriter} which produces changelog files by lookup for the compaction
  * involving level 0 files.
  */
-public class LookupMergeTreeCompactRewriter extends ChangelogMergeTreeRewriter {
+public class LookupMergeTreeCompactRewriter<T> extends ChangelogMergeTreeRewriter {
 
-    private final LookupLevels lookupLevels;
+    private final LookupLevels<T> lookupLevels;
+    private final MergeFunctionWrapperFactory<T> wrapperFactory;
 
     public LookupMergeTreeCompactRewriter(
             int maxLevel,
             MergeEngine mergeEngine,
-            LookupLevels lookupLevels,
+            LookupLevels<T> lookupLevels,
             KeyValueFileReaderFactory readerFactory,
             KeyValueFileWriterFactory writerFactory,
             Comparator<InternalRow> keyComparator,
+            @Nullable FieldsComparator userDefinedSeqComparator,
             MergeFunctionFactory<KeyValue> mfFactory,
             MergeSorter mergeSorter,
-            RecordEqualiser valueEqualiser,
-            boolean changelogRowDeduplicate) {
+            MergeFunctionWrapperFactory<T> wrapperFactory,
+            LookupStrategy lookupStrategy,
+            @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
         super(
                 maxLevel,
                 mergeEngine,
                 readerFactory,
                 writerFactory,
                 keyComparator,
+                userDefinedSeqComparator,
                 mfFactory,
                 mergeSorter,
-                valueEqualiser,
-                changelogRowDeduplicate);
+                lookupStrategy,
+                deletionVectorsMaintainer);
+        if (lookupStrategy.deletionVector) {
+            checkArgument(
+                    deletionVectorsMaintainer != null,
+                    "deletionVectorsMaintainer should not be null, there is a bug.");
+        }
         this.lookupLevels = lookupLevels;
+        this.wrapperFactory = wrapperFactory;
     }
 
     @Override
@@ -82,12 +98,17 @@ public class LookupMergeTreeCompactRewriter extends ChangelogMergeTreeRewriter {
             return NO_CHANGELOG;
         }
 
+        // In deletionVector mode, since drop delete is required, rewrite is always required.
+        if (lookupStrategy.deletionVector) {
+            return CHANGELOG_WITH_REWRITE;
+        }
+
         if (outputLevel == maxLevel) {
             return CHANGELOG_NO_REWRITE;
         }
 
         // DEDUPLICATE retains the latest records as the final result, so merging has no impact on
-        // it at all
+        // it at all.
         if (mergeEngine == MergeEngine.DEDUPLICATE) {
             return CHANGELOG_NO_REWRITE;
         }
@@ -100,21 +121,83 @@ public class LookupMergeTreeCompactRewriter extends ChangelogMergeTreeRewriter {
 
     @Override
     protected MergeFunctionWrapper<ChangelogResult> createMergeWrapper(int outputLevel) {
-        return new LookupChangelogMergeFunctionWrapper(
-                mfFactory,
-                key -> {
-                    try {
-                        return lookupLevels.lookup(key, outputLevel + 1);
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                },
-                valueEqualiser,
-                changelogRowDeduplicate);
+        return wrapperFactory.create(
+                mfFactory, outputLevel, lookupLevels, deletionVectorsMaintainer);
     }
 
     @Override
     public void close() throws IOException {
         lookupLevels.close();
+    }
+
+    /** Factory to create {@link MergeFunctionWrapper}. */
+    public interface MergeFunctionWrapperFactory<T> {
+
+        MergeFunctionWrapper<ChangelogResult> create(
+                MergeFunctionFactory<KeyValue> mfFactory,
+                int outputLevel,
+                LookupLevels<T> lookupLevels,
+                @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer);
+    }
+
+    /** A normal {@link MergeFunctionWrapperFactory} to create lookup wrapper. */
+    public static class LookupMergeFunctionWrapperFactory<T>
+            implements MergeFunctionWrapperFactory<T> {
+
+        private final RecordEqualiser valueEqualiser;
+        private final boolean changelogRowDeduplicate;
+        private final LookupStrategy lookupStrategy;
+
+        public LookupMergeFunctionWrapperFactory(
+                RecordEqualiser valueEqualiser,
+                boolean changelogRowDeduplicate,
+                LookupStrategy lookupStrategy) {
+            this.valueEqualiser = valueEqualiser;
+            this.changelogRowDeduplicate = changelogRowDeduplicate;
+            this.lookupStrategy = lookupStrategy;
+        }
+
+        @Override
+        public MergeFunctionWrapper<ChangelogResult> create(
+                MergeFunctionFactory<KeyValue> mfFactory,
+                int outputLevel,
+                LookupLevels<T> lookupLevels,
+                @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
+            return new LookupChangelogMergeFunctionWrapper<>(
+                    mfFactory,
+                    key -> {
+                        try {
+                            return lookupLevels.lookup(key, outputLevel + 1);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    },
+                    valueEqualiser,
+                    changelogRowDeduplicate,
+                    lookupStrategy,
+                    deletionVectorsMaintainer);
+        }
+    }
+
+    /** A {@link MergeFunctionWrapperFactory} for first row. */
+    public static class FirstRowMergeFunctionWrapperFactory
+            implements MergeFunctionWrapperFactory<Boolean> {
+
+        @Override
+        public MergeFunctionWrapper<ChangelogResult> create(
+                MergeFunctionFactory<KeyValue> mfFactory,
+                int outputLevel,
+                LookupLevels<Boolean> lookupLevels,
+                @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
+            return new FistRowMergeFunctionWrapper(
+                    mfFactory,
+                    key -> {
+                        try {
+                            return lookupLevels.lookup(key, outputLevel + 1) != null;
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+        }
     }
 }

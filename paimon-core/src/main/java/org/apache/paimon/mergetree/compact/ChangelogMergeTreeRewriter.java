@@ -20,17 +20,21 @@ package org.apache.paimon.mergetree.compact;
 
 import org.apache.paimon.CoreOptions.MergeEngine;
 import org.apache.paimon.KeyValue;
-import org.apache.paimon.codegen.RecordEqualiser;
 import org.apache.paimon.compact.CompactResult;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.deletionvectors.DeletionVectorsMaintainer;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.KeyValueFileReaderFactory;
 import org.apache.paimon.io.KeyValueFileWriterFactory;
 import org.apache.paimon.io.RollingFileWriter;
+import org.apache.paimon.lookup.LookupStrategy;
 import org.apache.paimon.mergetree.MergeSorter;
 import org.apache.paimon.mergetree.MergeTreeReaders;
 import org.apache.paimon.mergetree.SortedRun;
 import org.apache.paimon.reader.RecordReaderIterator;
+import org.apache.paimon.utils.FieldsComparator;
+
+import javax.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,8 +49,7 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
 
     protected final int maxLevel;
     protected final MergeEngine mergeEngine;
-    protected final RecordEqualiser valueEqualiser;
-    protected final boolean changelogRowDeduplicate;
+    protected final LookupStrategy lookupStrategy;
 
     public ChangelogMergeTreeRewriter(
             int maxLevel,
@@ -54,15 +57,22 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
             KeyValueFileReaderFactory readerFactory,
             KeyValueFileWriterFactory writerFactory,
             Comparator<InternalRow> keyComparator,
+            @Nullable FieldsComparator userDefinedSeqComparator,
             MergeFunctionFactory<KeyValue> mfFactory,
             MergeSorter mergeSorter,
-            RecordEqualiser valueEqualiser,
-            boolean changelogRowDeduplicate) {
-        super(readerFactory, writerFactory, keyComparator, mfFactory, mergeSorter);
+            LookupStrategy lookupStrategy,
+            @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
+        super(
+                readerFactory,
+                writerFactory,
+                keyComparator,
+                userDefinedSeqComparator,
+                mfFactory,
+                mergeSorter,
+                deletionVectorsMaintainer);
         this.maxLevel = maxLevel;
         this.mergeEngine = mergeEngine;
-        this.valueEqualiser = valueEqualiser;
-        this.changelogRowDeduplicate = changelogRowDeduplicate;
+        this.lookupStrategy = lookupStrategy;
     }
 
     protected abstract boolean rewriteChangelog(
@@ -93,7 +103,7 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
     public CompactResult rewrite(
             int outputLevel, boolean dropDelete, List<List<SortedRun>> sections) throws Exception {
         if (rewriteChangelog(outputLevel, dropDelete, sections)) {
-            return rewriteChangelogCompaction(outputLevel, sections, true);
+            return rewriteChangelogCompaction(outputLevel, sections, dropDelete, true);
         } else {
             return rewriteCompaction(outputLevel, dropDelete, sections);
         }
@@ -102,10 +112,14 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
     /**
      * Rewrite and produce changelog at the same time.
      *
+     * @param dropDelete whether to drop delete when rewrite compact file
      * @param rewriteCompactFile whether to rewrite compact file
      */
     private CompactResult rewriteChangelogCompaction(
-            int outputLevel, List<List<SortedRun>> sections, boolean rewriteCompactFile)
+            int outputLevel,
+            List<List<SortedRun>> sections,
+            boolean dropDelete,
+            boolean rewriteCompactFile)
             throws Exception {
         List<ConcatRecordReader.ReaderSupplier<ChangelogResult>> sectionReaders = new ArrayList<>();
         for (List<SortedRun> section : sections) {
@@ -115,6 +129,7 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
                                     section,
                                     readerFactory,
                                     keyComparator,
+                                    userDefinedSeqComparator,
                                     createMergeWrapper(outputLevel),
                                     mergeSorter));
         }
@@ -128,15 +143,20 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
             if (rewriteCompactFile) {
                 compactFileWriter = writerFactory.createRollingMergeTreeFileWriter(outputLevel);
             }
-            changelogFileWriter = writerFactory.createRollingChangelogFileWriter(outputLevel);
+            if (lookupStrategy.produceChangelog) {
+                changelogFileWriter = writerFactory.createRollingChangelogFileWriter(outputLevel);
+            }
 
             while (iterator.hasNext()) {
                 ChangelogResult result = iterator.next();
-                if (rewriteCompactFile && result.result() != null) {
-                    compactFileWriter.write(result.result());
+                KeyValue keyValue = result.result();
+                if (rewriteCompactFile && keyValue != null && (!dropDelete || keyValue.isAdd())) {
+                    compactFileWriter.write(keyValue);
                 }
-                for (KeyValue kv : result.changelogs()) {
-                    changelogFileWriter.write(kv);
+                if (lookupStrategy.produceChangelog) {
+                    for (KeyValue kv : result.changelogs()) {
+                        changelogFileWriter.write(kv);
+                    }
                 }
             }
         } finally {
@@ -159,7 +179,18 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
                                 .map(x -> x.upgrade(outputLevel))
                                 .collect(Collectors.toList());
 
-        return new CompactResult(before, after, changelogFileWriter.result());
+        if (deletionVectorsMaintainer != null) {
+            for (DataFileMeta dataFileMeta : before) {
+                deletionVectorsMaintainer.removeDeletionVectorOf(dataFileMeta.fileName());
+            }
+        }
+
+        return new CompactResult(
+                before,
+                after,
+                lookupStrategy.produceChangelog
+                        ? changelogFileWriter.result()
+                        : Collections.emptyList());
     }
 
     @Override
@@ -170,6 +201,8 @@ public abstract class ChangelogMergeTreeRewriter extends MergeTreeCompactRewrite
                     outputLevel,
                     Collections.singletonList(
                             Collections.singletonList(SortedRun.fromSingle(file))),
+                    // In deletion vector mode, we always drop deletion
+                    lookupStrategy.deletionVector,
                     strategy.rewrite);
         } else {
             return super.upgrade(outputLevel, file);

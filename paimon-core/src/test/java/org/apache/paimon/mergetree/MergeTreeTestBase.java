@@ -447,7 +447,8 @@ public abstract class MergeTreeTestBase {
                 options.compactionFileSize(),
                 options.numSortedRunStopTrigger(),
                 new TestRewriter(),
-                null);
+                null,
+                false);
     }
 
     static class MockFailResultCompactionManager extends MergeTreeCompactManager {
@@ -467,7 +468,8 @@ public abstract class MergeTreeTestBase {
                     minFileSize,
                     numSortedRunStopTrigger,
                     rewriter,
-                    null);
+                    null,
+                    false);
         }
 
         protected CompactResult obtainCompactResult()
@@ -554,6 +556,7 @@ public abstract class MergeTreeTestBase {
                         dropDelete,
                         readerFactory,
                         comparator,
+                        null,
                         DeduplicateMergeFunction.factory().create(),
                         new MergeSorter(options, null, null, null));
         List<TestRecord> records = new ArrayList<>();
@@ -600,6 +603,7 @@ public abstract class MergeTreeTestBase {
                             dropDelete,
                             compactReaderFactory,
                             comparator,
+                            null,
                             DeduplicateMergeFunction.factory().create(),
                             new MergeSorter(options, null, null, null));
             writer.write(new RecordReaderIterator<>(sectionsReader));

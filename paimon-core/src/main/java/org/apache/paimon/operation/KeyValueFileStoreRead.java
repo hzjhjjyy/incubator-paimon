@@ -23,9 +23,9 @@ import org.apache.paimon.KeyValue;
 import org.apache.paimon.KeyValueFileStore;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.deletionvectors.DeletionVectorsIndexFile;
 import org.apache.paimon.disk.IOManager;
-import org.apache.paimon.format.FileFormatDiscover;
-import org.apache.paimon.fs.FileIO;
+import org.apache.paimon.index.IndexFileHandler;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.KeyValueFileReaderFactory;
 import org.apache.paimon.mergetree.DropDeleteReader;
@@ -41,12 +41,11 @@ import org.apache.paimon.mergetree.compact.MergeFunctionWrapper;
 import org.apache.paimon.mergetree.compact.ReducerMergeFunctionWrapper;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.reader.RecordReader;
-import org.apache.paimon.schema.KeyValueFieldsExtractor;
 import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.types.RowType;
-import org.apache.paimon.utils.FileStorePathFactory;
+import org.apache.paimon.utils.FieldsComparator;
 import org.apache.paimon.utils.ProjectedRow;
 
 import javax.annotation.Nullable;
@@ -72,6 +71,7 @@ public class KeyValueFileStoreRead implements FileStoreRead<KeyValue> {
     private final Comparator<InternalRow> keyComparator;
     private final MergeFunctionFactory<KeyValue> mfFactory;
     private final MergeSorter mergeSorter;
+    @Nullable private final FieldsComparator userDefinedSeqComparator;
 
     @Nullable private int[][] keyProjectedFields;
 
@@ -81,55 +81,32 @@ public class KeyValueFileStoreRead implements FileStoreRead<KeyValue> {
 
     @Nullable private int[][] pushdownProjection;
     @Nullable private int[][] outerProjection;
+    private final CoreOptions options;
+    private final IndexFileHandler indexFileHandler;
 
     private boolean forceKeepDelete = false;
 
     public KeyValueFileStoreRead(
-            FileIO fileIO,
             SchemaManager schemaManager,
             long schemaId,
             RowType keyType,
             RowType valueType,
             Comparator<InternalRow> keyComparator,
+            @Nullable FieldsComparator userDefinedSeqComparator,
             MergeFunctionFactory<KeyValue> mfFactory,
-            FileFormatDiscover formatDiscover,
-            FileStorePathFactory pathFactory,
-            KeyValueFieldsExtractor extractor,
-            CoreOptions options) {
-        this(
-                schemaManager,
-                schemaId,
-                keyType,
-                valueType,
-                keyComparator,
-                mfFactory,
-                KeyValueFileReaderFactory.builder(
-                        fileIO,
-                        schemaManager,
-                        schemaId,
-                        keyType,
-                        valueType,
-                        formatDiscover,
-                        pathFactory,
-                        extractor,
-                        options));
-    }
-
-    public KeyValueFileStoreRead(
-            SchemaManager schemaManager,
-            long schemaId,
-            RowType keyType,
-            RowType valueType,
-            Comparator<InternalRow> keyComparator,
-            MergeFunctionFactory<KeyValue> mfFactory,
-            KeyValueFileReaderFactory.Builder readerFactoryBuilder) {
+            KeyValueFileReaderFactory.Builder readerFactoryBuilder,
+            CoreOptions options,
+            IndexFileHandler indexFileHandler) {
         this.tableSchema = schemaManager.schema(schemaId);
         this.readerFactoryBuilder = readerFactoryBuilder;
         this.keyComparator = keyComparator;
         this.mfFactory = mfFactory;
+        this.userDefinedSeqComparator = userDefinedSeqComparator;
         this.mergeSorter =
                 new MergeSorter(
                         CoreOptions.fromMap(tableSchema.options()), keyType, valueType, null);
+        this.options = options;
+        this.indexFileHandler = indexFileHandler;
     }
 
     public KeyValueFileStoreRead withKeyProjection(int[][] projectedFields) {
@@ -206,6 +183,20 @@ public class KeyValueFileStoreRead implements FileStoreRead<KeyValue> {
 
     private RecordReader<KeyValue> createReaderWithoutOuterProjection(DataSplit split)
             throws IOException {
+        if (options.deletionVectorsEnabled()) {
+            indexFileHandler
+                    .scan(
+                            split.snapshotId(),
+                            DeletionVectorsIndexFile.DELETION_VECTORS_INDEX,
+                            split.partition(),
+                            split.bucket())
+                    .ifPresent(
+                            fileMeta ->
+                                    readerFactoryBuilder.withDeletionVectorSupplier(
+                                            filename ->
+                                                    indexFileHandler.readDeletionVector(
+                                                            fileMeta, filename)));
+        }
         if (split.isStreaming()) {
             KeyValueFileReaderFactory readerFactory =
                     readerFactoryBuilder.build(
@@ -227,6 +218,7 @@ public class KeyValueFileStoreRead implements FileStoreRead<KeyValue> {
                             batchMergeRead(
                                     split.partition(), split.bucket(), split.dataFiles(), false),
                             keyComparator,
+                            userDefinedSeqComparator,
                             mergeSorter,
                             forceKeepDelete);
         }
@@ -243,23 +235,30 @@ public class KeyValueFileStoreRead implements FileStoreRead<KeyValue> {
                 readerFactoryBuilder.build(
                         partition, bucket, false, filtersForNonOverlappedSection);
 
-        List<ReaderSupplier<KeyValue>> sectionReaders = new ArrayList<>();
-        MergeFunctionWrapper<KeyValue> mergeFuncWrapper =
-                new ReducerMergeFunctionWrapper(mfFactory.create(pushdownProjection));
-        for (List<SortedRun> section : new IntervalPartition(files, keyComparator).partition()) {
-            sectionReaders.add(
-                    () ->
-                            MergeTreeReaders.readerForSection(
-                                    section,
-                                    section.size() > 1
-                                            ? overlappedSectionFactory
-                                            : nonOverlappedSectionFactory,
-                                    keyComparator,
-                                    mergeFuncWrapper,
-                                    mergeSorter));
+        RecordReader<KeyValue> reader;
+        if (options.deletionVectorsEnabled()) {
+            reader = streamingConcat(files, nonOverlappedSectionFactory);
+        } else {
+            List<ReaderSupplier<KeyValue>> sectionReaders = new ArrayList<>();
+            MergeFunctionWrapper<KeyValue> mergeFuncWrapper =
+                    new ReducerMergeFunctionWrapper(mfFactory.create(pushdownProjection));
+            for (List<SortedRun> section :
+                    new IntervalPartition(files, keyComparator).partition()) {
+                sectionReaders.add(
+                        () ->
+                                MergeTreeReaders.readerForSection(
+                                        section,
+                                        section.size() > 1
+                                                ? overlappedSectionFactory
+                                                : nonOverlappedSectionFactory,
+                                        keyComparator,
+                                        userDefinedSeqComparator,
+                                        mergeFuncWrapper,
+                                        mergeSorter));
+            }
+            reader = ConcatRecordReader.create(sectionReaders);
         }
 
-        RecordReader<KeyValue> reader = ConcatRecordReader.create(sectionReaders);
         if (!keepDelete) {
             reader = new DropDeleteReader(reader);
         }

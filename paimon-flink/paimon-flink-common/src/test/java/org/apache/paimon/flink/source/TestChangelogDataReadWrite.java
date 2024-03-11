@@ -28,6 +28,7 @@ import org.apache.paimon.format.FileFormat;
 import org.apache.paimon.fs.Path;
 import org.apache.paimon.fs.local.LocalFileIO;
 import org.apache.paimon.io.DataFileMeta;
+import org.apache.paimon.io.KeyValueFileReaderFactory;
 import org.apache.paimon.memory.HeapMemorySegmentPool;
 import org.apache.paimon.memory.MemoryOwner;
 import org.apache.paimon.mergetree.compact.DeduplicateMergeFunction;
@@ -117,19 +118,29 @@ public class TestChangelogDataReadWrite {
                             RecordReader.RecordIterator<KeyValue>,
                             RecordReader.RecordIterator<InternalRow>>
                     rowDataIteratorCreator) {
+        SchemaManager schemaManager = new SchemaManager(LocalFileIO.create(), tablePath);
+        long schemaId = 0;
         KeyValueFileStoreRead read =
                 new KeyValueFileStoreRead(
-                        LocalFileIO.create(),
-                        new SchemaManager(LocalFileIO.create(), tablePath),
-                        0,
+                        schemaManager,
+                        schemaId,
                         KEY_TYPE,
                         VALUE_TYPE,
                         COMPARATOR,
+                        null,
                         DeduplicateMergeFunction.factory(),
-                        ignore -> avro,
-                        pathFactory,
-                        EXTRACTOR,
-                        new CoreOptions(new HashMap<>()));
+                        KeyValueFileReaderFactory.builder(
+                                LocalFileIO.create(),
+                                schemaManager,
+                                schemaId,
+                                KEY_TYPE,
+                                VALUE_TYPE,
+                                ignore -> avro,
+                                pathFactory,
+                                EXTRACTOR,
+                                new CoreOptions(new HashMap<>())),
+                        new CoreOptions(new HashMap<>()),
+                        null);
         return new KeyValueTableRead(read, null) {
 
             @Override
@@ -176,12 +187,14 @@ public class TestChangelogDataReadWrite {
                                 KEY_TYPE,
                                 VALUE_TYPE,
                                 () -> COMPARATOR,
+                                () -> null,
                                 () -> EQUALISER,
                                 DeduplicateMergeFunction.factory(),
                                 pathFactory,
                                 pathFactoryMap,
                                 snapshotManager,
                                 null, // not used, we only create an empty writer
+                                null,
                                 null,
                                 options,
                                 EXTRACTOR,

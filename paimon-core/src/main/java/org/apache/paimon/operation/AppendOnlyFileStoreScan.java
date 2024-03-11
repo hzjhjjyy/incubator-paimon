@@ -49,7 +49,8 @@ public class AppendOnlyFileStoreScan extends AbstractFileStoreScan {
             ManifestList.Factory manifestListFactory,
             int numOfBuckets,
             boolean checkNumOfBuckets,
-            Integer scanManifestParallelism) {
+            Integer scanManifestParallelism,
+            String branchName) {
         super(
                 partitionType,
                 bucketFilter,
@@ -59,7 +60,8 @@ public class AppendOnlyFileStoreScan extends AbstractFileStoreScan {
                 manifestListFactory,
                 numOfBuckets,
                 checkNumOfBuckets,
-                scanManifestParallelism);
+                scanManifestParallelism,
+                branchName);
         this.fieldStatsConverters =
                 new FieldStatsConverters(sid -> scanTableSchema(sid).fields(), schemaId);
     }
@@ -88,8 +90,8 @@ public class AppendOnlyFileStoreScan extends AbstractFileStoreScan {
     }
 
     @Override
-    protected boolean filterWholeBucketByStats(List<ManifestEntry> entries) {
+    protected List<ManifestEntry> filterWholeBucketByStats(List<ManifestEntry> entries) {
         // We don't need to filter per-bucket entries here
-        return true;
+        return entries;
     }
 }

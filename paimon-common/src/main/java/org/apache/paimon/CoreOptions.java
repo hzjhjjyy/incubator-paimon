@@ -18,11 +18,13 @@
 
 package org.apache.paimon;
 
+import org.apache.paimon.annotation.Documentation;
 import org.apache.paimon.annotation.Documentation.ExcludeFromDocumentation;
 import org.apache.paimon.annotation.Documentation.Immutable;
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.format.FileFormat;
 import org.apache.paimon.fs.Path;
+import org.apache.paimon.lookup.LookupStrategy;
 import org.apache.paimon.options.ConfigOption;
 import org.apache.paimon.options.MemorySize;
 import org.apache.paimon.options.Options;
@@ -30,6 +32,7 @@ import org.apache.paimon.options.OptionsUtils;
 import org.apache.paimon.options.description.DescribedEnum;
 import org.apache.paimon.options.description.Description;
 import org.apache.paimon.options.description.InlineElement;
+import org.apache.paimon.utils.MathUtils;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.StringUtils;
 
@@ -71,7 +74,7 @@ public class CoreOptions implements Serializable {
     public static final ConfigOption<Integer> BUCKET =
             key("bucket")
                     .intType()
-                    .defaultValue(1)
+                    .defaultValue(-1)
                     .withDescription("Bucket number for file store.");
 
     @Immutable
@@ -189,6 +192,7 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "The minimum number of completed snapshots to retain. Should be greater than or equal to 1.");
 
+    @Documentation.OverrideDefault("infinite")
     public static final ConfigOption<Integer> SNAPSHOT_NUM_RETAINED_MAX =
             key("snapshot.num-retained.max")
                     .intType()
@@ -366,7 +370,7 @@ public class CoreOptions implements Serializable {
     public static final ConfigOption<MemorySize> CACHE_PAGE_SIZE =
             key("cache-page-size")
                     .memoryType()
-                    .defaultValue(MemorySize.parse("16 kb"))
+                    .defaultValue(MemorySize.parse("64 kb"))
                     .withDescription("Memory page size for caching.");
 
     public static final ConfigOption<MemorySize> TARGET_FILE_SIZE =
@@ -482,26 +486,6 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "The field that generates the row kind for primary key table,"
                                     + " the row kind determines which data is '+I', '-U', '+U' or '-D'.");
-
-    public static final ConfigOption<String> SEQUENCE_AUTO_PADDING =
-            key("sequence.auto-padding")
-                    .stringType()
-                    .noDefaultValue()
-                    .withDescription(
-                            Description.builder()
-                                    .text(
-                                            "Specify the way of padding precision, if the provided sequence field is used to indicate \"time\" but doesn't meet the precise.")
-                                    .list(
-                                            text("You can specific:"),
-                                            text(
-                                                    "1. \"row-kind-flag\": Pads a bit flag to indicate whether it is retract (0) or add (1) message."),
-                                            text(
-                                                    "2. \"second-to-micro\": Pads the sequence field that indicates time with precision of seconds to micro-second."),
-                                            text(
-                                                    "3. \"millis-to-micro\": Pads the sequence field that indicates time with precision of milli-second to micro-second."),
-                                            text(
-                                                    "4. Composite pattern: for example, \"second-to-micro,row-kind-flag\"."))
-                                    .build());
 
     public static final ConfigOption<StartupMode> SCAN_MODE =
             key("scan.mode")
@@ -722,12 +706,20 @@ public class CoreOptions implements Serializable {
                                     + " if there is a need for access, it will be re-read from the DFS to build"
                                     + " an index on the local disk.");
 
+    @Documentation.OverrideDefault("infinite")
     public static final ConfigOption<MemorySize> LOOKUP_CACHE_MAX_DISK_SIZE =
             key("lookup.cache-max-disk-size")
                     .memoryType()
                     .defaultValue(MemorySize.MAX_VALUE)
                     .withDescription(
                             "Max disk size for lookup cache, you can use this option to limit the use of local disks.");
+
+    public static final ConfigOption<String> LOOKUP_CACHE_SPILL_COMPRESSION =
+            key("lookup.cache-spill-compression")
+                    .stringType()
+                    .defaultValue("lz4")
+                    .withDescription(
+                            "Spill compression for lookup cache, currently none, lz4, lzo and zstd are supported.");
 
     public static final ConfigOption<MemorySize> LOOKUP_CACHE_MAX_MEMORY_SIZE =
             key("lookup.cache-max-memory-size")
@@ -1078,6 +1070,21 @@ public class CoreOptions implements Serializable {
                     .defaultValue(MemorySize.ofMebiBytes(10))
                     .withDescription("The threshold for read file async.");
 
+    public static final ConfigOption<Boolean> COMMIT_FORCE_CREATE_SNAPSHOT =
+            key("commit.force-create-snapshot")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription("Whether to force create snapshot on commit.");
+
+    public static final ConfigOption<Boolean> DELETION_VECTORS_ENABLED =
+            key("deletion-vectors.enabled")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Whether to enable deletion vectors mode. In this mode, index files containing deletion"
+                                    + " vectors are generated when data is written, which marks the data for deletion."
+                                    + " During read operations, by applying these index files, merging can be avoided.");
+
     private final Options options;
 
     public CoreOptions(Map<String, String> options) {
@@ -1162,6 +1169,15 @@ public class CoreOptions implements Serializable {
                 .collect(Collectors.toMap(e -> Integer.valueOf(e.getKey()), Map.Entry::getValue));
     }
 
+    public boolean definedAggFunc() {
+        for (String key : options.toMap().keySet()) {
+            if (key.startsWith(FIELDS_PREFIX) && key.endsWith(AGG_FUNCTION)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public String fieldAggFunc(String fieldName) {
         return options.get(
                 key(FIELDS_PREFIX + "." + fieldName + "." + AGG_FUNCTION)
@@ -1242,8 +1258,7 @@ public class CoreOptions implements Serializable {
     public int sortSpillThreshold() {
         Integer maxSortedRunNum = options.get(SORT_SPILL_THRESHOLD);
         if (maxSortedRunNum == null) {
-            int stopNum = numSortedRunStopTrigger();
-            maxSortedRunNum = Math.max(stopNum, stopNum + 1);
+            maxSortedRunNum = MathUtils.incrementSafely(numSortedRunStopTrigger());
         }
         checkArgument(maxSortedRunNum > 1, "The sort spill threshold cannot be smaller than 2.");
         return maxSortedRunNum;
@@ -1329,7 +1344,7 @@ public class CoreOptions implements Serializable {
     public int numSortedRunStopTrigger() {
         Integer stopTrigger = options.get(NUM_SORTED_RUNS_STOP_TRIGGER);
         if (stopTrigger == null) {
-            stopTrigger = numSortedRunCompactionTrigger() + 1;
+            stopTrigger = MathUtils.incrementSafely(numSortedRunCompactionTrigger());
         }
         return Math.max(numSortedRunCompactionTrigger(), stopTrigger);
     }
@@ -1338,7 +1353,9 @@ public class CoreOptions implements Serializable {
         // By default, this ensures that the compaction does not fall to level 0, but at least to
         // level 1
         Integer numLevels = options.get(NUM_LEVELS);
-        numLevels = numLevels == null ? numSortedRunCompactionTrigger() + 1 : numLevels;
+        if (numLevels == null) {
+            numLevels = MathUtils.incrementSafely(numSortedRunCompactionTrigger());
+        }
         return numLevels;
     }
 
@@ -1368,6 +1385,16 @@ public class CoreOptions implements Serializable {
 
     public ChangelogProducer changelogProducer() {
         return options.get(CHANGELOG_PRODUCER);
+    }
+
+    public boolean needLookup() {
+        return lookupStrategy().needLookup;
+    }
+
+    public LookupStrategy lookupStrategy() {
+        return LookupStrategy.from(
+                options.get(CHANGELOG_PRODUCER).equals(ChangelogProducer.LOOKUP),
+                deletionVectorsEnabled());
     }
 
     public boolean changelogRowDeduplicate() {
@@ -1465,20 +1492,12 @@ public class CoreOptions implements Serializable {
         return options.get(DYNAMIC_BUCKET_ASSIGNER_PARALLELISM);
     }
 
-    public Optional<String> sequenceField() {
-        return options.getOptional(SEQUENCE_FIELD);
+    public Optional<List<String>> sequenceField() {
+        return options.getOptional(SEQUENCE_FIELD).map(s -> Arrays.asList(s.split(",")));
     }
 
     public Optional<String> rowkindField() {
         return options.getOptional(ROWKIND_FIELD);
-    }
-
-    public List<String> sequenceAutoPadding() {
-        String padding = options.get(SEQUENCE_AUTO_PADDING);
-        if (padding == null) {
-            return Collections.emptyList();
-        }
-        return Arrays.asList(padding.split(","));
     }
 
     public boolean writeOnly() {
@@ -1570,6 +1589,10 @@ public class CoreOptions implements Serializable {
         return options.get(SINK_WATERMARK_TIME_ZONE);
     }
 
+    public boolean forceCreatingSnapshot() {
+        return options.get(COMMIT_FORCE_CREATE_SNAPSHOT);
+    }
+
     public Map<String, String> getFieldDefaultValues() {
         Map<String, String> defaultValues = new HashMap<>();
         String fieldPrefix = FIELDS_PREFIX + ".";
@@ -1629,6 +1652,10 @@ public class CoreOptions implements Serializable {
 
     public int varTypeSize() {
         return options.get(ZORDER_VAR_LENGTH_CONTRIBUTION);
+    }
+
+    public boolean deletionVectorsEnabled() {
+        return options.get(DELETION_VECTORS_ENABLED);
     }
 
     /** Specifies the merge engine for table with primary key. */
