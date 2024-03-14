@@ -29,6 +29,7 @@ import org.apache.paimon.compact.CompactManager;
 import org.apache.paimon.compact.NoopCompactManager;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.deletionvectors.DeletionVector;
 import org.apache.paimon.deletionvectors.DeletionVectorsMaintainer;
 import org.apache.paimon.format.FileFormatDiscover;
 import org.apache.paimon.fs.FileIO;
@@ -163,7 +164,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
             List<DataFileMeta> restoreFiles,
             @Nullable CommitIncrement restoreIncrement,
             ExecutorService compactExecutor,
-            @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
+            @Nullable DeletionVectorsMaintainer dvMaintainer) {
         if (LOG.isDebugEnabled()) {
             LOG.debug(
                     "Creating merge tree writer for partition {} bucket {} from restored files {}",
@@ -188,12 +189,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
                         : universalCompaction;
         CompactManager compactManager =
                 createCompactManager(
-                        partition,
-                        bucket,
-                        compactStrategy,
-                        compactExecutor,
-                        levels,
-                        deletionVectorsMaintainer);
+                        partition, bucket, compactStrategy, compactExecutor, levels, dvMaintainer);
 
         return new MergeTreeWriter(
                 bufferSpillable(),
@@ -222,7 +218,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
             CompactStrategy compactStrategy,
             ExecutorService compactExecutor,
             Levels levels,
-            @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
+            @Nullable DeletionVectorsMaintainer dvMaintainer) {
         if (options.writeOnly()) {
             return new NoopCompactManager();
         } else {
@@ -235,7 +231,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
                             keyComparator,
                             userDefinedSeqComparator,
                             levels,
-                            deletionVectorsMaintainer);
+                            dvMaintainer);
             return new MergeTreeCompactManager(
                     compactExecutor,
                     levels,
@@ -257,12 +253,12 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
             Comparator<InternalRow> keyComparator,
             @Nullable FieldsComparator userDefinedSeqComparator,
             Levels levels,
-            @Nullable DeletionVectorsMaintainer deletionVectorsMaintainer) {
-        if (deletionVectorsMaintainer != null) {
-            readerFactoryBuilder.withDeletionVectorSupplier(
-                    deletionVectorsMaintainer::deletionVectorOf);
-        }
-        KeyValueFileReaderFactory readerFactory = readerFactoryBuilder.build(partition, bucket);
+            @Nullable DeletionVectorsMaintainer dvMaintainer) {
+        KeyValueFileReaderFactory.Builder readerFactoryBuilder =
+                this.readerFactoryBuilder.copyWithoutProjection();
+        DeletionVector.Factory dvFactory = DeletionVector.factory(dvMaintainer);
+        KeyValueFileReaderFactory readerFactory =
+                readerFactoryBuilder.build(partition, bucket, dvFactory);
         KeyValueFileWriterFactory writerFactory =
                 writerFactoryBuilder.build(partition, bucket, options);
         MergeSorter mergeSorter = new MergeSorter(options, keyType, valueType, ioManager);
@@ -293,9 +289,8 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
                 }
                 lookupReaderFactory =
                         readerFactoryBuilder
-                                .copyWithoutProjection()
                                 .withValueProjection(new int[0][])
-                                .build(partition, bucket);
+                                .build(partition, bucket, dvFactory);
                 processor = new ContainsValueProcessor();
                 wrapperFactory = new FirstRowMergeFunctionWrapperFactory();
             } else {
@@ -321,8 +316,8 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
                     mfFactory,
                     mergeSorter,
                     wrapperFactory,
-                    lookupStrategy,
-                    deletionVectorsMaintainer);
+                    lookupStrategy.produceChangelog,
+                    dvMaintainer);
         } else {
             return new MergeTreeCompactRewriter(
                     readerFactory,
@@ -330,8 +325,7 @@ public class KeyValueFileStoreWrite extends MemoryFileStoreWrite<KeyValue> {
                     keyComparator,
                     userDefinedSeqComparator,
                     mfFactory,
-                    mergeSorter,
-                    deletionVectorsMaintainer);
+                    mergeSorter);
         }
     }
 
