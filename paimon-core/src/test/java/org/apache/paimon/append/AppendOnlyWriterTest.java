@@ -35,6 +35,7 @@ import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFilePathFactory;
 import org.apache.paimon.memory.HeapMemorySegmentPool;
 import org.apache.paimon.memory.MemoryPoolFactory;
+import org.apache.paimon.options.MemorySize;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.stats.FieldStatsArraySerializer;
 import org.apache.paimon.types.DataType;
@@ -515,9 +516,7 @@ public class AppendOnlyWriterTest {
 
     private DataFilePathFactory createPathFactory() {
         return new DataFilePathFactory(
-                new Path(tempDir.toString()),
-                "dt=" + PART,
-                0,
+                new Path(tempDir + "/dt=" + PART + "/bucket-0"),
                 CoreOptions.FILE_FORMAT.defaultValue().toString());
     }
 
@@ -595,14 +594,17 @@ public class AppendOnlyWriterTest {
                         AppendOnlyWriterTest.SCHEMA,
                         getMaxSequenceNumber(toCompact),
                         compactManager,
+                        null,
                         forceCompact,
                         pathFactory,
                         null,
                         useWriteBuffer,
                         spillable,
                         CoreOptions.FILE_COMPRESSION.defaultValue(),
+                        CoreOptions.SPILL_COMPRESSION.defaultValue(),
                         StatsCollectorFactories.createStatsFactories(
-                                options, AppendOnlyWriterTest.SCHEMA.getFieldNames()));
+                                options, AppendOnlyWriterTest.SCHEMA.getFieldNames()),
+                        MemorySize.MAX_VALUE);
         writer.setMemoryPool(
                 new HeapMemorySegmentPool(options.writeBufferSize(), options.pageSize()));
         return Pair.of(writer, compactManager.allFiles());

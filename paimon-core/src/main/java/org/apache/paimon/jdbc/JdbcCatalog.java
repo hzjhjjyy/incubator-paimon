@@ -20,7 +20,8 @@ package org.apache.paimon.jdbc;
 
 import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.catalog.AbstractCatalog;
-import org.apache.paimon.catalog.CatalogLock;
+import org.apache.paimon.catalog.CatalogLockContext;
+import org.apache.paimon.catalog.CatalogLockFactory;
 import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
@@ -71,24 +72,20 @@ public class JdbcCatalog extends AbstractCatalog {
 
     private final JdbcClientPool connections;
     private final String catalogKey;
-    private final Map<String, String> options;
+    private final Options options;
     private final String warehouse;
 
-    protected JdbcCatalog(
-            FileIO fileIO, String catalogKey, Map<String, String> config, String warehouse) {
-        super(fileIO, Options.fromMap(config));
+    protected JdbcCatalog(FileIO fileIO, String catalogKey, Options options, String warehouse) {
+        super(fileIO, options);
         this.catalogKey = catalogKey;
-        this.options = config;
+        this.options = options;
         this.warehouse = warehouse;
         Preconditions.checkNotNull(options, "Invalid catalog properties: null");
         this.connections =
                 new JdbcClientPool(
-                        Integer.parseInt(
-                                config.getOrDefault(
-                                        CatalogOptions.CLIENT_POOL_SIZE.key(),
-                                        CatalogOptions.CLIENT_POOL_SIZE.defaultValue().toString())),
+                        options.get(CatalogOptions.CLIENT_POOL_SIZE),
                         options.get(CatalogOptions.URI.key()),
-                        options);
+                        options.toMap());
         try {
             initializeCatalogTablesIfNeed();
         } catch (SQLException e) {
@@ -135,7 +132,7 @@ public class JdbcCatalog extends AbstractCatalog {
 
         // if lock enabled, Check and create distributed lock table.
         if (lockEnabled()) {
-            JdbcUtils.createDistributedLockTable(connections);
+            JdbcUtils.createDistributedLockTable(connections, options);
         }
     }
 
@@ -347,8 +344,13 @@ public class JdbcCatalog extends AbstractCatalog {
     }
 
     @Override
-    public Optional<CatalogLock.LockContext> lockContext() {
-        return Optional.of(new JdbcCatalogLock.JdbcLockContext(connections, catalogKey, options));
+    public Optional<CatalogLockFactory> defaultLockFactory() {
+        return Optional.of(new JdbcCatalogLockFactory());
+    }
+
+    @Override
+    public Optional<CatalogLockContext> lockContext() {
+        return Optional.of(new JdbcCatalogLockContext(connections, catalogKey, options));
     }
 
     private Lock lock(Identifier identifier) {
@@ -357,7 +359,10 @@ public class JdbcCatalog extends AbstractCatalog {
         }
         JdbcCatalogLock lock =
                 new JdbcCatalogLock(
-                        connections, catalogKey, checkMaxSleep(options), acquireTimeout(options));
+                        connections,
+                        catalogKey,
+                        checkMaxSleep(options.toMap()),
+                        acquireTimeout(options.toMap()));
         return Lock.fromCatalog(lock, identifier);
     }
 

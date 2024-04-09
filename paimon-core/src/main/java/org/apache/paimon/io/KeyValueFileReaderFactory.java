@@ -21,16 +21,21 @@ package org.apache.paimon.io;
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.KeyValue;
 import org.apache.paimon.data.BinaryRow;
+import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.deletionvectors.ApplyDeletionVectorReader;
 import org.apache.paimon.deletionvectors.DeletionVector;
 import org.apache.paimon.format.FileFormatDiscover;
 import org.apache.paimon.format.FormatKey;
+import org.apache.paimon.format.FormatReaderContext;
+import org.apache.paimon.format.OrcFormatReaderContext;
 import org.apache.paimon.fs.FileIO;
+import org.apache.paimon.fs.Path;
 import org.apache.paimon.partition.PartitionUtils;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.reader.RecordReader;
 import org.apache.paimon.schema.KeyValueFieldsExtractor;
 import org.apache.paimon.schema.SchemaManager;
+import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.AsyncRecordReader;
 import org.apache.paimon.utils.BulkFormatMapping;
@@ -52,7 +57,7 @@ public class KeyValueFileReaderFactory {
 
     private final FileIO fileIO;
     private final SchemaManager schemaManager;
-    private final long schemaId;
+    private final TableSchema schema;
     private final RowType keyType;
     private final RowType valueType;
 
@@ -63,11 +68,12 @@ public class KeyValueFileReaderFactory {
     private final Map<FormatKey, BulkFormatMapping> bulkFormatMappings;
     private final BinaryRow partition;
     private final DeletionVector.Factory dvFactory;
+    private final boolean ignoreDelete;
 
     private KeyValueFileReaderFactory(
             FileIO fileIO,
             SchemaManager schemaManager,
-            long schemaId,
+            TableSchema schema,
             RowType keyType,
             RowType valueType,
             BulkFormatMapping.BulkFormatMappingBuilder bulkFormatMappingBuilder,
@@ -77,7 +83,7 @@ public class KeyValueFileReaderFactory {
             DeletionVector.Factory dvFactory) {
         this.fileIO = fileIO;
         this.schemaManager = schemaManager;
-        this.schemaId = schemaId;
+        this.schema = schema;
         this.keyType = keyType;
         this.valueType = valueType;
         this.bulkFormatMappingBuilder = bulkFormatMappingBuilder;
@@ -86,15 +92,16 @@ public class KeyValueFileReaderFactory {
         this.partition = partition;
         this.bulkFormatMappings = new HashMap<>();
         this.dvFactory = dvFactory;
+        this.ignoreDelete = CoreOptions.fromMap(schema.options()).ignoreDelete();
     }
 
     public RecordReader<KeyValue> createRecordReader(
             long schemaId, String fileName, long fileSize, int level) throws IOException {
         if (fileSize >= asyncThreshold && fileName.endsWith("orc")) {
             return new AsyncRecordReader<>(
-                    () -> createRecordReader(schemaId, fileName, level, false, 2));
+                    () -> createRecordReader(schemaId, fileName, level, false, 2, fileSize));
         }
-        return createRecordReader(schemaId, fileName, level, true, null);
+        return createRecordReader(schemaId, fileName, level, true, null, fileSize);
     }
 
     private RecordReader<KeyValue> createRecordReader(
@@ -102,7 +109,8 @@ public class KeyValueFileReaderFactory {
             String fileName,
             int level,
             boolean reuseFormat,
-            @Nullable Integer poolSize)
+            @Nullable Integer orcPoolSize,
+            long fileSize)
             throws IOException {
         String formatIdentifier = DataFilePathFactory.formatIdentifier(fileName);
 
@@ -110,8 +118,8 @@ public class KeyValueFileReaderFactory {
                 () ->
                         bulkFormatMappingBuilder.build(
                                 formatIdentifier,
-                                schemaManager.schema(this.schemaId),
-                                schemaManager.schema(schemaId));
+                                schema,
+                                schemaId == schema.id() ? schema : schemaManager.schema(schemaId));
 
         BulkFormatMapping bulkFormatMapping =
                 reuseFormat
@@ -119,29 +127,33 @@ public class KeyValueFileReaderFactory {
                                 new FormatKey(schemaId, formatIdentifier),
                                 key -> formatSupplier.get())
                         : formatSupplier.get();
-        RecordReader<KeyValue> recordReader =
-                new KeyValueDataFileRecordReader(
-                        fileIO,
+        Path filePath = pathFactory.toPath(fileName);
+
+        RecordReader<InternalRow> fileRecordReader =
+                new FileRecordReader(
                         bulkFormatMapping.getReaderFactory(),
-                        pathFactory.toPath(fileName),
-                        keyType,
-                        valueType,
-                        level,
-                        poolSize,
+                        orcPoolSize == null
+                                ? new FormatReaderContext(fileIO, filePath, fileSize)
+                                : new OrcFormatReaderContext(
+                                        fileIO, filePath, fileSize, orcPoolSize),
                         bulkFormatMapping.getIndexMapping(),
                         bulkFormatMapping.getCastMapping(),
                         PartitionUtils.create(bulkFormatMapping.getPartitionPair(), partition));
+
         Optional<DeletionVector> deletionVector = dvFactory.create(fileName);
         if (deletionVector.isPresent() && !deletionVector.get().isEmpty()) {
-            recordReader = new ApplyDeletionVectorReader<>(recordReader, deletionVector.get());
+            fileRecordReader =
+                    new ApplyDeletionVectorReader<>(fileRecordReader, deletionVector.get());
         }
-        return recordReader;
+
+        return new KeyValueDataFileRecordReader(
+                fileRecordReader, keyType, valueType, level, ignoreDelete);
     }
 
     public static Builder builder(
             FileIO fileIO,
             SchemaManager schemaManager,
-            long schemaId,
+            TableSchema schema,
             RowType keyType,
             RowType valueType,
             FileFormatDiscover formatDiscover,
@@ -151,7 +163,7 @@ public class KeyValueFileReaderFactory {
         return new Builder(
                 fileIO,
                 schemaManager,
-                schemaId,
+                schema,
                 keyType,
                 valueType,
                 formatDiscover,
@@ -165,7 +177,7 @@ public class KeyValueFileReaderFactory {
 
         private final FileIO fileIO;
         private final SchemaManager schemaManager;
-        private final long schemaId;
+        private final TableSchema schema;
         private final RowType keyType;
         private final RowType valueType;
         private final FileFormatDiscover formatDiscover;
@@ -182,7 +194,7 @@ public class KeyValueFileReaderFactory {
         private Builder(
                 FileIO fileIO,
                 SchemaManager schemaManager,
-                long schemaId,
+                TableSchema schema,
                 RowType keyType,
                 RowType valueType,
                 FileFormatDiscover formatDiscover,
@@ -191,7 +203,7 @@ public class KeyValueFileReaderFactory {
                 CoreOptions options) {
             this.fileIO = fileIO;
             this.schemaManager = schemaManager;
-            this.schemaId = schemaId;
+            this.schema = schema;
             this.keyType = keyType;
             this.valueType = valueType;
             this.formatDiscover = formatDiscover;
@@ -209,7 +221,7 @@ public class KeyValueFileReaderFactory {
             return new Builder(
                     fileIO,
                     schemaManager,
-                    schemaId,
+                    schema,
                     keyType,
                     valueType,
                     formatDiscover,
@@ -255,7 +267,7 @@ public class KeyValueFileReaderFactory {
             return new KeyValueFileReaderFactory(
                     fileIO,
                     schemaManager,
-                    schemaId,
+                    schema,
                     projectedKeyType,
                     projectedValueType,
                     BulkFormatMapping.newBuilder(

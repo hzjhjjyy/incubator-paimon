@@ -42,16 +42,15 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.apache.paimon.CoreOptions.BUCKET_KEY;
+import static org.apache.paimon.CoreOptions.CHANGELOG_NUM_RETAINED_MAX;
+import static org.apache.paimon.CoreOptions.CHANGELOG_NUM_RETAINED_MIN;
 import static org.apache.paimon.CoreOptions.CHANGELOG_PRODUCER;
 import static org.apache.paimon.CoreOptions.FIELDS_PREFIX;
 import static org.apache.paimon.CoreOptions.FULL_COMPACTION_DELTA_COMMITS;
-import static org.apache.paimon.CoreOptions.FileFormatType.ORC;
-import static org.apache.paimon.CoreOptions.FileFormatType.PARQUET;
 import static org.apache.paimon.CoreOptions.INCREMENTAL_BETWEEN;
 import static org.apache.paimon.CoreOptions.INCREMENTAL_BETWEEN_TIMESTAMP;
 import static org.apache.paimon.CoreOptions.SCAN_FILE_CREATION_TIME_MILLIS;
@@ -91,6 +90,10 @@ public class SchemaValidation {
 
         validateStartupMode(options);
 
+        validateFieldsPrefix(schema, options);
+
+        validateSequenceField(schema, options);
+
         validateSequenceGroup(schema, options);
 
         ChangelogProducer changelogProducer = options.changelogProducer();
@@ -119,6 +122,15 @@ public class SchemaValidation {
                 SNAPSHOT_NUM_RETAINED_MIN.key()
                         + " should not be larger than "
                         + SNAPSHOT_NUM_RETAINED_MAX.key());
+
+        checkArgument(
+                options.changelogNumRetainMin() > 0,
+                CHANGELOG_NUM_RETAINED_MIN.key() + " should be at least 1");
+        checkArgument(
+                options.changelogNumRetainMin() <= options.changelogNumRetainMax(),
+                CHANGELOG_NUM_RETAINED_MIN.key()
+                        + " should not be larger than "
+                        + CHANGELOG_NUM_RETAINED_MAX.key());
 
         // Get the format type here which will try to convert string value to {@Code
         // FileFormatType}. If the string value is illegal, an exception will be thrown.
@@ -167,44 +179,6 @@ public class SchemaValidation {
             }
         }
 
-        List<String> sequenceField = options.sequenceField();
-        if (sequenceField.size() > 0) {
-            checkArgument(
-                    schema.fieldNames().containsAll(sequenceField),
-                    "Nonexistent sequence fields: '%s'",
-                    sequenceField);
-        }
-
-        Optional<String> rowkindField = options.rowkindField();
-        rowkindField.ifPresent(
-                field ->
-                        checkArgument(
-                                schema.fieldNames().contains(field),
-                                "Nonexistent rowkind field: '%s'",
-                                field));
-
-        if (sequenceField.size() > 0) {
-            sequenceField.forEach(
-                    field ->
-                            checkArgument(
-                                    options.fieldAggFunc(field) == null,
-                                    "Should not define aggregation on sequence field: '%s'",
-                                    field));
-        }
-
-        CoreOptions.MergeEngine mergeEngine = options.mergeEngine();
-        if (mergeEngine == CoreOptions.MergeEngine.FIRST_ROW) {
-            if (sequenceField.size() > 0) {
-                throw new IllegalArgumentException(
-                        "Do not support use sequence field on FIRST_MERGE merge engine");
-            }
-
-            if (changelogProducer != ChangelogProducer.LOOKUP) {
-                throw new IllegalArgumentException(
-                        "Only support 'lookup' changelog-producer on FIRST_MERGE merge engine");
-            }
-        }
-
         if (schema.crossPartitionUpdate()) {
             if (options.bucket() != -1) {
                 throw new IllegalArgumentException(
@@ -213,15 +187,22 @@ public class SchemaValidation {
                                         + "(Primary key constraint %s not include all partition fields %s).",
                                 schema.primaryKeys(), schema.partitionKeys()));
             }
+        }
 
-            if (sequenceField.size() > 0) {
+        if (options.mergeEngine() == CoreOptions.MergeEngine.FIRST_ROW) {
+            if (options.changelogProducer() != ChangelogProducer.LOOKUP) {
                 throw new IllegalArgumentException(
-                        String.format(
-                                "You can not use sequence.field in cross partition update case "
-                                        + "(Primary key constraint %s not include all partition fields %s).",
-                                schema.primaryKeys(), schema.partitionKeys()));
+                        "Only support 'lookup' changelog-producer on FIRST_MERGE merge engine");
             }
         }
+
+        options.rowkindField()
+                .ifPresent(
+                        field ->
+                                checkArgument(
+                                        schema.fieldNames().contains(field),
+                                        "Rowkind field: '%s' can not be found in table schema.",
+                                        field));
 
         if (options.deletionVectorsEnabled()) {
             validateForDeletionVectors(schema, options);
@@ -377,6 +358,23 @@ public class SchemaValidation {
         return configOptions.stream().map(ConfigOption::key).collect(Collectors.joining(","));
     }
 
+    private static void validateFieldsPrefix(TableSchema schema, CoreOptions options) {
+        List<String> fieldNames = schema.fieldNames();
+        options.toMap()
+                .keySet()
+                .forEach(
+                        k -> {
+                            if (k.startsWith(FIELDS_PREFIX)) {
+                                String fieldName = k.split("\\.")[1];
+                                checkArgument(
+                                        fieldNames.contains(fieldName),
+                                        String.format(
+                                                "Field %s can not be found in table schema.",
+                                                fieldName));
+                            }
+                        });
+    }
+
     private static void validateSequenceGroup(TableSchema schema, CoreOptions options) {
         Map<String, Set<String>> fields2Group = new HashMap<>();
         for (Map.Entry<String, String> entry : options.toMap().entrySet()) {
@@ -485,17 +483,52 @@ public class SchemaValidation {
                 "Deletion vectors mode is only supported for tables with primary keys.");
 
         checkArgument(
-                options.formatType().equals(ORC) || options.formatType().equals(PARQUET),
-                "Deletion vectors mode is only supported for orc or parquet file format now.");
-
-        checkArgument(
                 options.changelogProducer() == ChangelogProducer.NONE
                         || options.changelogProducer() == ChangelogProducer.LOOKUP,
                 "Deletion vectors mode is only supported for none or lookup changelog producer now.");
 
-        // todo: implement it
         checkArgument(
                 !options.mergeEngine().equals(MergeEngine.FIRST_ROW),
-                "Deletion vectors mode is not supported for first row merge engine now.");
+                "First row merge engine does not need deletion vectors because there is no deletion of old data in this merge engine.");
+    }
+
+    private static void validateSequenceField(TableSchema schema, CoreOptions options) {
+        List<String> sequenceField = options.sequenceField();
+        if (sequenceField.size() > 0) {
+            Map<String, Integer> fieldCount =
+                    sequenceField.stream()
+                            .collect(Collectors.toMap(field -> field, field -> 1, Integer::sum));
+
+            sequenceField.forEach(
+                    field -> {
+                        checkArgument(
+                                schema.fieldNames().contains(field),
+                                "Sequence field: '%s' can not be found in table schema.",
+                                field);
+
+                        checkArgument(
+                                options.fieldAggFunc(field) == null,
+                                "Should not define aggregation on sequence field: '%s'.",
+                                field);
+
+                        checkArgument(
+                                fieldCount.get(field) == 1,
+                                "Sequence field '%s' is defined repeatedly.",
+                                field);
+                    });
+
+            if (options.mergeEngine() == CoreOptions.MergeEngine.FIRST_ROW) {
+                throw new IllegalArgumentException(
+                        "Do not support use sequence field on FIRST_MERGE merge engine.");
+            }
+
+            if (schema.crossPartitionUpdate()) {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "You can not use sequence.field in cross partition update case "
+                                        + "(Primary key constraint '%s' not include all partition fields '%s').",
+                                schema.primaryKeys(), schema.partitionKeys()));
+            }
+        }
     }
 }

@@ -19,6 +19,7 @@
 package org.apache.paimon.table.source.snapshot;
 
 import org.apache.paimon.CoreOptions;
+import org.apache.paimon.CoreOptions.MergeEngine;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.codegen.CodeGenUtils;
 import org.apache.paimon.codegen.RecordComparator;
@@ -73,6 +74,7 @@ public class SnapshotReaderImpl implements SnapshotReader {
     private final FileStoreScan scan;
     private final TableSchema tableSchema;
     private final CoreOptions options;
+    private final MergeEngine mergeEngine;
     private final boolean deletionVectors;
     private final SnapshotManager snapshotManager;
     private final ConsumerManager consumerManager;
@@ -100,6 +102,7 @@ public class SnapshotReaderImpl implements SnapshotReader {
         this.scan = scan;
         this.tableSchema = tableSchema;
         this.options = options;
+        this.mergeEngine = options.mergeEngine();
         this.deletionVectors = options.deletionVectorsEnabled();
         this.snapshotManager = snapshotManager;
         this.consumerManager =
@@ -274,18 +277,25 @@ public class SnapshotReaderImpl implements SnapshotReader {
                                 .withPartition(partition)
                                 .withBucket(bucket)
                                 .isStreaming(isStreaming);
-                List<List<DataFileMeta>> splitGroups =
+                List<SplitGenerator.SplitGroup> splitGroups =
                         isStreaming
                                 ? splitGenerator.splitForStreaming(bucketFiles)
                                 : splitGenerator.splitForBatch(bucketFiles);
-                for (List<DataFileMeta> dataFiles : splitGroups) {
-                    builder.withDataFiles(dataFiles)
-                            .rawFiles(convertToRawFiles(partition, bucket, dataFiles));
-                    if (deletionVectors) {
-                        IndexFileMeta deletionIndexFile =
-                                indexFileHandler
+
+                IndexFileMeta deletionIndexFile =
+                        deletionVectors
+                                ? indexFileHandler
                                         .scan(snapshotId, DELETION_VECTORS_INDEX, partition, bucket)
-                                        .orElse(null);
+                                        .orElse(null)
+                                : null;
+                for (SplitGenerator.SplitGroup splitGroup : splitGroups) {
+                    List<DataFileMeta> dataFiles = splitGroup.files;
+                    builder.withDataFiles(dataFiles);
+                    builder.rawFiles(
+                            splitGroup.rawConvertible
+                                    ? convertToRawFiles(partition, bucket, dataFiles)
+                                    : Collections.emptyList());
+                    if (deletionVectors) {
                         builder.withDataDeletionFiles(
                                 getDeletionFiles(dataFiles, deletionIndexFile));
                     }
@@ -366,8 +376,7 @@ public class SnapshotReaderImpl implements SnapshotReader {
                                 .withBucket(bucket)
                                 .withBeforeFiles(before)
                                 .withDataFiles(data)
-                                .isStreaming(isStreaming)
-                                .rawFiles(convertToRawFiles(part, bucket, data));
+                                .isStreaming(isStreaming);
                 if (deletionVectors) {
                     IndexFileMeta beforeDeletionIndex =
                             indexFileHandler
@@ -433,21 +442,6 @@ public class SnapshotReaderImpl implements SnapshotReader {
     private List<RawFile> convertToRawFiles(
             BinaryRow partition, int bucket, List<DataFileMeta> dataFiles) {
         String bucketPath = pathFactory.bucketPath(partition, bucket).toString();
-
-        // append only or deletionVectors files can be returned
-        if (tableSchema.primaryKeys().isEmpty() || deletionVectors) {
-            return makeRawTableFiles(bucketPath, dataFiles);
-        }
-
-        int maxLevel = options.numLevels() - 1;
-        if (dataFiles.stream().map(DataFileMeta::level).allMatch(l -> l == maxLevel)) {
-            return makeRawTableFiles(bucketPath, dataFiles);
-        }
-
-        return Collections.emptyList();
-    }
-
-    private List<RawFile> makeRawTableFiles(String bucketPath, List<DataFileMeta> dataFiles) {
         return dataFiles.stream()
                 .map(f -> makeRawTableFile(bucketPath, f))
                 .collect(Collectors.toList());

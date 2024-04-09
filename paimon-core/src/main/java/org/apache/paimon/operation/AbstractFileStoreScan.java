@@ -18,6 +18,7 @@
 
 package org.apache.paimon.operation;
 
+import org.apache.paimon.CoreOptions;
 import org.apache.paimon.Snapshot;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.manifest.FileEntry;
@@ -72,6 +73,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
 
     private final ConcurrentMap<Long, TableSchema> tableSchemas;
     private final SchemaManager schemaManager;
+    private final TableSchema schema;
     protected final ScanBucketFilter bucketKeyFilter;
     private final String branchName;
 
@@ -91,6 +93,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
             ScanBucketFilter bucketKeyFilter,
             SnapshotManager snapshotManager,
             SchemaManager schemaManager,
+            TableSchema schema,
             ManifestFile.Factory manifestFileFactory,
             ManifestList.Factory manifestListFactory,
             int numOfBuckets,
@@ -101,6 +104,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
         this.bucketKeyFilter = bucketKeyFilter;
         this.snapshotManager = snapshotManager;
         this.schemaManager = schemaManager;
+        this.schema = schema;
         this.manifestFileFactory = manifestFileFactory;
         this.manifestList = manifestListFactory.create();
         this.numOfBuckets = numOfBuckets;
@@ -274,7 +278,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
                                 ? "partition "
                                         + FileStorePathFactory.getPartitionComputer(
                                                         partitionType,
-                                                        FileStorePathFactory.PARTITION_DEFAULT_NAME
+                                                        CoreOptions.PARTITION_DEFAULT_NAME
                                                                 .defaultValue())
                                                 .generatePartValues(file.partition())
                                 : "table";
@@ -407,7 +411,8 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
 
     /** Note: Keep this thread-safe. */
     protected TableSchema scanTableSchema(long id) {
-        return tableSchemas.computeIfAbsent(id, key -> schemaManager.schema(id));
+        return tableSchemas.computeIfAbsent(
+                id, key -> key == schema.id() ? schema : schemaManager.schema(id));
     }
 
     /** Note: Keep this thread-safe. */
@@ -454,6 +459,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
                 .create()
                 .read(
                         manifest.fileName(),
+                        manifest.fileSize(),
                         ManifestEntry.createCacheRowFilter(manifestCacheFilter, numOfBuckets),
                         ManifestEntry.createEntryRowFilter(
                                 partitionFilter, bucketFilter, numOfBuckets));
@@ -465,6 +471,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
                 .createSimpleFileEntryReader()
                 .read(
                         manifest.fileName(),
+                        manifest.fileSize(),
                         // use filter for ManifestEntry
                         // currently, projection is not pushed down to file format
                         // see SimpleFileEntrySerializer

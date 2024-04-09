@@ -1093,8 +1093,51 @@ public class MySqlSyncTableActionITCase extends MySqlActionITCaseBase {
                         .build();
         runActionWithDefaultEnv(action2);
 
-        Map<String, String> dynamicOptions = action2.fileStoreTable().options();
-        assertThat(dynamicOptions).containsAllEntriesOf(tableConfig);
+        FileStoreTable table = getFileStoreTable();
+        assertThat(table.options()).containsAllEntriesOf(tableConfig);
+    }
+
+    @Test
+    public void testOptionsChangeInExistingTable() throws Exception {
+        Map<String, String> options = new HashMap<>();
+        options.put("bucket", "1");
+        options.put("sink.parallelism", "1");
+        options.put("sequence.field", "_timestamp");
+
+        createFileStoreTable(
+                RowType.of(
+                        new DataType[] {
+                            DataTypes.INT().notNull(), DataTypes.DATE(), DataTypes.TIMESTAMP(0)
+                        },
+                        new String[] {"pk", "_date", "_timestamp"}),
+                Collections.emptyList(),
+                Collections.singletonList("pk"),
+                options);
+
+        Map<String, String> mySqlConfig = getBasicMySqlConfig();
+        mySqlConfig.put("database-name", DATABASE_NAME);
+        mySqlConfig.put("table-name", "test_exist_options_change");
+        Map<String, String> tableConfig = new HashMap<>();
+        // update immutable options
+        tableConfig.put("sequence.field", "_date");
+        // update existing options
+        tableConfig.put("sink.parallelism", "2");
+        // add new options
+        tableConfig.put("snapshot.expire.limit", "1000");
+
+        MySqlSyncTableAction action =
+                syncTableActionBuilder(mySqlConfig)
+                        .withPrimaryKeys("pk")
+                        .withTableConfig(tableConfig)
+                        .build();
+        runActionWithDefaultEnv(action);
+
+        FileStoreTable table = getFileStoreTable();
+
+        assertThat(table.options().get("bucket")).isEqualTo("1");
+        assertThat(table.options().get("sequence.field")).isEqualTo("_timestamp");
+        assertThat(table.options().get("sink.parallelism")).isEqualTo("2");
+        assertThat(table.options().get("snapshot.expire.limit")).isEqualTo("1000");
     }
 
     @Test
@@ -1274,6 +1317,8 @@ public class MySqlSyncTableActionITCase extends MySqlActionITCaseBase {
                         .build();
 
         assertThatCode(action::build).doesNotThrowAnyException();
-        assertThat(action.fileStoreTable().options().get(BUCKET.key())).isEqualTo("1");
+
+        FileStoreTable table = getFileStoreTable();
+        assertThat(table.options().get(BUCKET.key())).isEqualTo("1");
     }
 }
