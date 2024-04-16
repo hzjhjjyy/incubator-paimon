@@ -16,13 +16,21 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.data.columnar;
+package org.apache.paimon.flink.sink;
 
-import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.table.Table;
 
-/** Row column vector. */
-public interface RowColumnVector extends ColumnVector {
-    InternalRow getRow(int i);
+import javax.annotation.Nullable;
 
-    VectorizedColumnBatch getBatch();
+/** A special version {@link FlinkSinkBuilder} with log sink. */
+public class LogFlinkSinkBuilder extends FlinkSinkBuilder {
+
+    public LogFlinkSinkBuilder(Table table) {
+        super(table);
+    }
+
+    FlinkSinkBuilder logSinkFunction(@Nullable LogSinkFunction logSinkFunction) {
+        this.logSinkFunction = logSinkFunction;
+        return this;
+    }
 }

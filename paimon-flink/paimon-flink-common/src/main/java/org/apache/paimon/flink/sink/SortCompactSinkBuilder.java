@@ -16,13 +16,19 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.data.columnar;
+package org.apache.paimon.flink.sink;
 
-import org.apache.paimon.data.InternalRow;
+import org.apache.paimon.table.Table;
 
-/** Row column vector. */
-public interface RowColumnVector extends ColumnVector {
-    InternalRow getRow(int i);
+/** A special version {@link FlinkSinkBuilder} for sort compact. */
+public class SortCompactSinkBuilder extends FlinkSinkBuilder {
 
-    VectorizedColumnBatch getBatch();
+    public SortCompactSinkBuilder(Table table) {
+        super(table);
+    }
+
+    public FlinkSinkBuilder forCompact(boolean compactSink) {
+        this.compactSink = compactSink;
+        return this;
+    }
 }
