@@ -18,6 +18,8 @@
 
 package org.apache.paimon.spark.commands
 
+import org.apache.paimon.CoreOptions
+import org.apache.paimon.CoreOptions.WRITE_ONLY
 import org.apache.paimon.index.BucketAssigner
 import org.apache.paimon.spark.SparkRow
 import org.apache.paimon.spark.SparkUtils.createIOManager
@@ -32,6 +34,8 @@ import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import org.apache.spark.sql.functions._
 
 import java.io.IOException
+import java.util.Collections
+import java.util.Collections.singletonMap
 
 import scala.collection.JavaConverters._
 
@@ -45,7 +49,7 @@ case class PaimonSparkWriter(table: FileStoreTable) {
     case fileStoreTable: FileStoreTable =>
       fileStoreTable.bucketMode
     case _ =>
-      BucketMode.FIXED
+      BucketMode.HASH_FIXED
   }
 
   private lazy val primaryKeyCols = tableSchema.trimmedPrimaryKeys().asScala
@@ -53,6 +57,10 @@ case class PaimonSparkWriter(table: FileStoreTable) {
   private lazy val serializer = new CommitMessageSerializer
 
   val writeBuilder: BatchWriteBuilder = table.newBatchWriteBuilder()
+
+  def writeOnly(): PaimonSparkWriter = {
+    PaimonSparkWriter(table.copy(singletonMap(WRITE_ONLY.key(), "true")))
+  }
 
   def write(data: Dataset[_]): Seq[CommitMessage] = {
     val sparkSession = data.sparkSession
@@ -124,7 +132,7 @@ case class PaimonSparkWriter(table: FileStoreTable) {
     val encoderWithBucketCOl = encoderGroupWithBucketCol.encoder
 
     bucketMode match {
-      case BucketMode.DYNAMIC =>
+      case BucketMode.HASH_DYNAMIC =>
         assert(primaryKeyCols.nonEmpty, "Only primary-key table can support dynamic bucket.")
 
         // Topology: input -> shuffle by special key & partition hash -> bucket-assigner -> shuffle by partition & bucket
@@ -155,7 +163,7 @@ case class PaimonSparkWriter(table: FileStoreTable) {
         repartitionByPartitionsAndBucket(
           partitioned.mapPartitions(dynamicBucketProcessor.processPartition)(encoderWithBucketCOl))
 
-      case BucketMode.UNAWARE =>
+      case BucketMode.BUCKET_UNAWARE =>
         assert(primaryKeyCols.isEmpty, "Only append table can support unaware bucket.")
 
         // Topology: input -> bucket-assigner
@@ -164,7 +172,7 @@ case class PaimonSparkWriter(table: FileStoreTable) {
           .mapPartitions(unawareBucketProcessor.processPartition)(encoderWithBucketCOl)
           .toDF()
 
-      case BucketMode.FIXED =>
+      case BucketMode.HASH_FIXED =>
         // Topology: input -> bucket-assigner -> shuffle by partition & bucket
         val commonBucketProcessor =
           CommonBucketProcessor(table, bucketColIdx, encoderGroupWithBucketCol)

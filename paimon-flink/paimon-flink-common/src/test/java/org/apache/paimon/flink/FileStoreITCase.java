@@ -77,6 +77,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.apache.paimon.CoreOptions.BUCKET;
+import static org.apache.paimon.CoreOptions.BUCKET_KEY;
 import static org.apache.paimon.CoreOptions.FILE_FORMAT;
 import static org.apache.paimon.CoreOptions.PATH;
 import static org.apache.paimon.flink.LogicalTypeConversion.toDataType;
@@ -451,6 +452,9 @@ public class FileStoreITCase extends AbstractTestBase {
             throws Exception {
         Options options = buildConfiguration(noFail, temporaryPath);
         Path tablePath = new CoreOptions(options.toMap()).path();
+        if (primaryKey.length == 0) {
+            options.set(BUCKET_KEY, "_k");
+        }
         Schema schema =
                 new Schema(
                         toDataType(TABLE_TYPE).getFields(),
@@ -479,7 +483,7 @@ public class FileStoreITCase extends AbstractTestBase {
             FailingFileIO.reset(failingName, 3, 100);
             options.set(PATH, FailingFileIO.getFailingPath(failingName, temporaryPath));
         }
-        options.set(FILE_FORMAT, CoreOptions.FileFormatType.AVRO);
+        options.set(FILE_FORMAT, CoreOptions.FILE_FORMAT_AVRO);
         return options;
     }
 

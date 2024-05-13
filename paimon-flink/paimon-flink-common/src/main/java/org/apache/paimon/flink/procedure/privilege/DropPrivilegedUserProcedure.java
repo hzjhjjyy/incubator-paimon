@@ -16,14 +16,29 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.spark.utils;
+package org.apache.paimon.flink.procedure.privilege;
 
-import org.apache.paimon.catalog.Catalog;
-import org.apache.spark.sql.internal.SQLConf;
+import org.apache.flink.table.procedure.ProcedureContext;
 
-/** SQLConf utils. */
-public class SQLConfUtils {
-    public static String defaultDatabase(SQLConf sqlConf) {
-        return Catalog.DEFAULT_DATABASE;
+/**
+ * Procedure to drop a user from the privilege system. Only users with {@link
+ * org.apache.paimon.privilege.PrivilegeType#ADMIN} privilege can perform this operation. Usage:
+ *
+ * <pre><code>
+ *  CALL sys.drop_privileged_user('username')
+ * </code></pre>
+ */
+public class DropPrivilegedUserProcedure extends PrivilegeProcedureBase {
+
+    public static final String IDENTIFIER = "drop_privileged_user";
+
+    public String[] call(ProcedureContext procedureContext, String name) {
+        getPrivilegedCatalog().dropPrivilegedUser(name);
+        return new String[] {String.format("User %s is dropped.", name)};
+    }
+
+    @Override
+    public String identifier() {
+        return IDENTIFIER;
     }
 }

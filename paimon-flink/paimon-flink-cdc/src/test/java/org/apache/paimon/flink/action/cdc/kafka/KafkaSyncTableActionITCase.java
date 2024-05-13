@@ -173,6 +173,7 @@ public class KafkaSyncTableActionITCase extends KafkaActionITCaseBase {
                         new String[] {"k", "v1"}),
                 Collections.emptyList(),
                 Collections.singletonList("k"),
+                Collections.emptyList(),
                 Collections.emptyMap());
 
         KafkaSyncTableAction action =
@@ -507,6 +508,12 @@ public class KafkaSyncTableActionITCase extends KafkaActionITCaseBase {
         kafkaConfig.put(TOPIC.key(), topic);
 
         Map<String, String> config = getBasicTableConfig();
+        if ("debezium".equals(format)) {
+            // debezium has no key
+            // append mode never stop with compaction
+            config.remove("bucket");
+            config.put("write-only", "true");
+        }
         config.put("tag.automatic-creation", "watermark");
         config.put("tag.creation-period", "hourly");
         config.put("scan.watermark.alignment.group", "alignment-group-1");
@@ -765,10 +772,8 @@ public class KafkaSyncTableActionITCase extends KafkaActionITCaseBase {
                                 + "1.000011, 2.000022, 3.000033, "
                                 + "1.000111, 2.000222, 3.000333, "
                                 + "12345.110, 12345.220, 12345.330, "
-                                // TODO fix FIXED
-                                + "1.2345678987654322E32, 1.2345678987654322E32, 1.2345678987654322E32, "
-                                // TODO fix BIG DECIMAL
-                                + "11111, 22222, 33333, 2222222222222222400000000000.0000000000, "
+                                + "123456789876543212345678987654321.11, 123456789876543212345678987654321.22, 123456789876543212345678987654321.33, "
+                                + "11111, 22222, 33333, 2222222222222222300000001111.1234567890, "
                                 + "19439, "
                                 // display value of datetime is not affected by timezone
                                 + "2023-03-23T14:30:05, 2023-03-23T14:30:05.123, 2023-03-23T14:30:05.123456, "

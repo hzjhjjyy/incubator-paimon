@@ -16,14 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.spark.utils;
+package org.apache.paimon.privilege;
 
-import org.apache.paimon.catalog.Catalog;
-import org.apache.spark.sql.internal.SQLConf;
+import org.apache.paimon.annotation.Public;
 
-/** SQLConf utils. */
-public class SQLConfUtils {
-    public static String defaultDatabase(SQLConf sqlConf) {
-        return Catalog.DEFAULT_DATABASE;
-    }
+/**
+ * Entity type in privilege system.
+ *
+ * <p>Supports identity-based access control (grant privilege directly to user) and role-based
+ * access control (grant privilege to role, then assign role to user).
+ *
+ * @since 0.8.0
+ */
+@Public
+public enum EntityType {
+    USER,
+    ROLE
 }

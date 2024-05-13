@@ -16,14 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.spark.utils;
+package org.apache.paimon.flink.procedure.privilege;
 
-import org.apache.paimon.catalog.Catalog;
-import org.apache.spark.sql.internal.SQLConf;
+import org.apache.paimon.flink.procedure.ProcedureBase;
+import org.apache.paimon.privilege.PrivilegedCatalog;
 
-/** SQLConf utils. */
-public class SQLConfUtils {
-    public static String defaultDatabase(SQLConf sqlConf) {
-        return Catalog.DEFAULT_DATABASE;
+/** Base class for privilege-related procedures. */
+public abstract class PrivilegeProcedureBase extends ProcedureBase {
+
+    protected PrivilegedCatalog getPrivilegedCatalog() {
+        if (catalog instanceof PrivilegedCatalog) {
+            return (PrivilegedCatalog) catalog;
+        } else {
+            throw new UnsupportedOperationException(
+                    "The catalog you specified does not support privilege system");
+        }
     }
 }

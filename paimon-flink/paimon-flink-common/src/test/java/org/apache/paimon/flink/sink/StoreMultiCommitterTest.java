@@ -128,12 +128,15 @@ class StoreMultiCommitterTest {
                         firstOptions.toMap(),
                         "");
 
+        Options secondOptions = new Options();
+        secondOptions.setString("bucket", "1");
+        secondOptions.setString("bucket-key", "a");
         Schema secondTableSchema =
                 new Schema(
                         rowType2.getFields(),
                         Collections.emptyList(),
                         Collections.emptyList(),
-                        Collections.singletonMap("bucket", "1"),
+                        secondOptions.toMap(),
                         "");
         createTestTables(
                 catalog,
@@ -636,6 +639,8 @@ class StoreMultiCommitterTest {
         CommitterOperator<MultiTableCommittable, WrappedManifestCommittable> operator =
                 new CommitterOperator<>(
                         true,
+                        false,
+                        true,
                         initialCommitUser,
                         (user, metricGroup) ->
                                 new StoreMultiCommitter(
@@ -651,6 +656,8 @@ class StoreMultiCommitterTest {
             createLossyTestHarness() throws Exception {
         CommitterOperator<MultiTableCommittable, WrappedManifestCommittable> operator =
                 new CommitterOperator<>(
+                        true,
+                        false,
                         true,
                         initialCommitUser,
                         (user, metricGroup) ->

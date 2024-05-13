@@ -16,13 +16,20 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.spark.utils;
+package org.apache.paimon.reader;
 
-import org.apache.spark.sql.internal.SQLConf;
+import javax.annotation.Nullable;
 
-/** SQLConf utils. */
-public class SQLConfUtils {
-    public static String defaultDatabase(SQLConf sqlConf) {
-        return sqlConf.defaultDatabase();
+import java.io.IOException;
+
+/** An empty {@link RecordReader}. */
+public class EmptyRecordReader<T> implements RecordReader<T> {
+    @Nullable
+    @Override
+    public RecordIterator<T> readBatch() throws IOException {
+        return null;
     }
+
+    @Override
+    public void close() throws IOException {}
 }
