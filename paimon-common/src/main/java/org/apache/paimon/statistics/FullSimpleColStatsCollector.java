@@ -19,10 +19,10 @@
 package org.apache.paimon.statistics;
 
 import org.apache.paimon.data.serializer.Serializer;
-import org.apache.paimon.format.FieldStats;
+import org.apache.paimon.format.SimpleColStats;
 
 /** The full stats collector which will report null count, min value, max value if available. */
-public class FullFieldStatsCollector extends AbstractFieldStatsCollector {
+public class FullSimpleColStatsCollector extends AbstractSimpleColStatsCollector {
 
     @Override
     public void collect(Object field, Serializer<Object> fieldSerializer) {
@@ -45,7 +45,7 @@ public class FullFieldStatsCollector extends AbstractFieldStatsCollector {
     }
 
     @Override
-    public FieldStats convert(FieldStats source) {
+    public SimpleColStats convert(SimpleColStats source) {
         return source;
     }
 }

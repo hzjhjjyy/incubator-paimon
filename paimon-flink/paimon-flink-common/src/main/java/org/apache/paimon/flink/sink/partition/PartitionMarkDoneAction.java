@@ -16,32 +16,12 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.format;
+package org.apache.paimon.flink.sink.partition;
 
-import org.apache.paimon.fs.FileIO;
-import org.apache.paimon.fs.Path;
-import org.apache.paimon.utils.Pair;
+import java.io.Closeable;
 
-import java.io.IOException;
+/** Action to mark partitions done. */
+public interface PartitionMarkDoneAction extends Closeable {
 
-/** Extracts statistics directly from file. */
-public interface TableStatsExtractor {
-
-    FieldStats[] extract(FileIO fileIO, Path path) throws IOException;
-
-    Pair<FieldStats[], FileInfo> extractWithFileInfo(FileIO fileIO, Path path) throws IOException;
-
-    /** File info fetched from physical file. */
-    class FileInfo {
-
-        private long rowCount;
-
-        public FileInfo(long rowCount) {
-            this.rowCount = rowCount;
-        }
-
-        public long getRowCount() {
-            return rowCount;
-        }
-    }
+    void markDone(String partition) throws Exception;
 }

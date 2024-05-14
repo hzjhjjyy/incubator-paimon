@@ -16,23 +16,12 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.statistics;
+package org.apache.paimon.spark.sql
 
-import org.apache.paimon.data.serializer.Serializer;
-import org.apache.paimon.format.FieldStats;
+import org.apache.spark.SPARK_VERSION
 
-/** The counts stats collector, which will only report null count stats. */
-public class CountsFieldStatsCollector extends AbstractFieldStatsCollector {
+trait SparkVersionSupport {
+  lazy val sparkVersion: String = SPARK_VERSION
 
-    @Override
-    public void collect(Object field, Serializer<Object> serializer) {
-        if (field == null) {
-            nullCount++;
-        }
-    }
-
-    @Override
-    public FieldStats convert(FieldStats source) {
-        return new FieldStats(null, null, source.nullCount());
-    }
+  lazy val gteqSpark3_3: Boolean = sparkVersion >= "3.3"
 }
