@@ -16,15 +16,25 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.table;
+package org.apache.paimon.spark.commands
 
-import org.apache.paimon.options.ExpireConfig;
+import org.apache.paimon.utils.{FileStorePathFactory, SerializationUtils}
 
-/** Expire snapshots. */
-public interface ExpireSnapshots {
-
-    ExpireSnapshots config(ExpireConfig expireConfig);
-
-    /** @return How many snapshots have been expired. */
-    int expire();
+/**
+ * This class will be used as Dataset's pattern type. So here use Array[Byte] instead of BinaryRow
+ * or DeletionVector.
+ */
+case class SparkDeletionVectors(
+    partitionAndBucket: String,
+    partition: Array[Byte],
+    bucket: Int,
+    dataFileAndDeletionVector: Seq[(String, Array[Byte])]
+) {
+  def relativePaths(fileStorePathFactory: FileStorePathFactory): Seq[String] = {
+    val prefix = fileStorePathFactory
+      .relativePartitionAndBucketPath(SerializationUtils.deserializeBinaryRow(partition), bucket)
+      .toUri
+      .toString + "/"
+    dataFileAndDeletionVector.map(prefix + _._1)
+  }
 }
