@@ -56,6 +56,7 @@ public class DataFileMeta {
     public static final BinaryRow EMPTY_MIN_KEY = EMPTY_ROW;
     public static final BinaryRow EMPTY_MAX_KEY = EMPTY_ROW;
     public static final int DUMMY_LEVEL = 0;
+    public static final long DUMMY_SNAPSHOT_ID = 0L;
 
     private final String fileName;
     private final long fileSize;
@@ -86,6 +87,9 @@ public class DataFileMeta {
     private final @Nullable byte[] embeddedIndex;
 
     private final @Nullable FileSource fileSource;
+
+    // update snapshotId before committing
+    private long snapshotId;
 
     public static DataFileMeta forAppend(
             String fileName,
@@ -136,7 +140,8 @@ public class DataFileMeta {
                 Timestamp.fromLocalDateTime(LocalDateTime.now()).toMillisTimestamp(),
                 0L,
                 embeddedIndex,
-                fileSource);
+                fileSource,
+                DUMMY_SNAPSHOT_ID);
     }
 
     public DataFileMeta(
@@ -170,7 +175,44 @@ public class DataFileMeta {
                 Timestamp.fromLocalDateTime(LocalDateTime.now()).toMillisTimestamp(),
                 deleteRowCount,
                 embeddedIndex,
-                fileSource);
+                fileSource,
+                DUMMY_SNAPSHOT_ID);
+    }
+
+    public DataFileMeta(
+            String fileName,
+            long fileSize,
+            long rowCount,
+            BinaryRow minKey,
+            BinaryRow maxKey,
+            SimpleStats keyStats,
+            SimpleStats valueStats,
+            long minSequenceNumber,
+            long maxSequenceNumber,
+            long schemaId,
+            int level,
+            @Nullable Long deleteRowCount,
+            @Nullable byte[] embeddedIndex,
+            @Nullable FileSource fileSource,
+            long snapshotId) {
+        this(
+                fileName,
+                fileSize,
+                rowCount,
+                minKey,
+                maxKey,
+                keyStats,
+                valueStats,
+                minSequenceNumber,
+                maxSequenceNumber,
+                schemaId,
+                level,
+                Collections.emptyList(),
+                Timestamp.fromLocalDateTime(LocalDateTime.now()).toMillisTimestamp(),
+                deleteRowCount,
+                embeddedIndex,
+                fileSource,
+                snapshotId);
     }
 
     public DataFileMeta(
@@ -189,7 +231,8 @@ public class DataFileMeta {
             Timestamp creationTime,
             @Nullable Long deleteRowCount,
             @Nullable byte[] embeddedIndex,
-            @Nullable FileSource fileSource) {
+            @Nullable FileSource fileSource,
+            long snapshotId) {
         this.fileName = fileName;
         this.fileSize = fileSize;
 
@@ -207,6 +250,7 @@ public class DataFileMeta {
         this.schemaId = schemaId;
         this.extraFiles = Collections.unmodifiableList(extraFiles);
         this.creationTime = creationTime;
+        this.snapshotId = snapshotId;
 
         this.deleteRowCount = deleteRowCount;
         this.fileSource = fileSource;
@@ -268,6 +312,14 @@ public class DataFileMeta {
         return level;
     }
 
+    public long snapshotId() {
+        return snapshotId;
+    }
+
+    public void setSnapshotId(long snapshotId) {
+        this.snapshotId = snapshotId;
+    }
+
     /**
      * Usage:
      *
@@ -325,7 +377,8 @@ public class DataFileMeta {
                 creationTime,
                 deleteRowCount,
                 embeddedIndex,
-                fileSource);
+                fileSource,
+                snapshotId);
     }
 
     public List<Path> collectFiles(DataFilePathFactory pathFactory) {
@@ -352,7 +405,8 @@ public class DataFileMeta {
                 creationTime,
                 deleteRowCount,
                 embeddedIndex,
-                fileSource);
+                fileSource,
+                snapshotId);
     }
 
     @Override
@@ -379,7 +433,8 @@ public class DataFileMeta {
                 && Objects.equals(extraFiles, that.extraFiles)
                 && Objects.equals(creationTime, that.creationTime)
                 && Objects.equals(deleteRowCount, that.deleteRowCount)
-                && Objects.equals(fileSource, that.fileSource);
+                && Objects.equals(fileSource, that.fileSource)
+                && snapshotId == that.snapshotId;
     }
 
     @Override
@@ -400,7 +455,8 @@ public class DataFileMeta {
                 extraFiles,
                 creationTime,
                 deleteRowCount,
-                fileSource);
+                fileSource,
+                snapshotId);
     }
 
     @Override
@@ -410,7 +466,7 @@ public class DataFileMeta {
                         + "minKey: %s, maxKey: %s, keyStats: %s, valueStats: %s, "
                         + "minSequenceNumber: %d, maxSequenceNumber: %d, "
                         + "schemaId: %d, level: %d, extraFiles: %s, creationTime: %s, "
-                        + "deleteRowCount: %d, fileSource: %s}",
+                        + "deleteRowCount: %d, fileSource: %s, snapshotId: &d}",
                 fileName,
                 fileSize,
                 rowCount,
@@ -426,7 +482,8 @@ public class DataFileMeta {
                 extraFiles,
                 creationTime,
                 deleteRowCount,
-                fileSource);
+                fileSource,
+                snapshotId);
     }
 
     public static RowType schema() {
@@ -447,6 +504,7 @@ public class DataFileMeta {
         fields.add(new DataField(13, "_DELETE_ROW_COUNT", new BigIntType(true)));
         fields.add(new DataField(14, "_EMBEDDED_FILE_INDEX", newBytesType(true)));
         fields.add(new DataField(15, "_FILE_SOURCE", new TinyIntType(true)));
+        fields.add(new DataField(16, "_SNAPSHOT_ID", new BigIntType(false)));
         return new RowType(fields);
     }
 

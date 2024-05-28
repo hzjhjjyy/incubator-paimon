@@ -108,6 +108,7 @@ public class DataFileMeta08Serializer extends ObjectSerializer<DataFileMeta> {
                 row.getTimestamp(12, 3),
                 row.isNullAt(13) ? null : row.getLong(13),
                 row.isNullAt(14) ? null : row.getBinary(14),
-                null);
+                null,
+                0L);
     }
 }

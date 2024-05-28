@@ -305,7 +305,11 @@ public class MergeFileSplitRead implements SplitRead<KeyValue> {
                         // See comments on DataFileMeta#extraFiles.
                         String fileName = changelogFile(file).orElse(file.fileName());
                         return readerFactory.createRecordReader(
-                                file.schemaId(), fileName, file.fileSize(), file.level());
+                                file.schemaId(),
+                                fileName,
+                                file.fileSize(),
+                                file.level(),
+                                file.snapshotId());
                     });
         }
 

@@ -51,17 +51,26 @@ public class SortMergeReaderWithLoserTree<T> implements SortMergeReader<T> {
 
     private Comparator<KeyValue> createSequenceComparator(
             @Nullable FieldsComparator userDefinedSeqComparator) {
-        if (userDefinedSeqComparator == null) {
-            return (e1, e2) -> Long.compare(e2.sequenceNumber(), e1.sequenceNumber());
-        }
+        Comparator<KeyValue> defaultComparator =
+                (e1, e2) -> {
+                    int result = Long.compare(e2.snapshotId(), e1.snapshotId());
+                    if (result != 0) {
+                        return result;
+                    }
+                    return Long.compare(e2.sequenceNumber(), e1.sequenceNumber());
+                };
 
-        return (o1, o2) -> {
-            int result = userDefinedSeqComparator.compare(o2.value(), o1.value());
-            if (result != 0) {
-                return result;
-            }
-            return Long.compare(o2.sequenceNumber(), o1.sequenceNumber());
-        };
+        if (userDefinedSeqComparator == null) {
+            return defaultComparator;
+        } else {
+            return (e1, e2) -> {
+                int result = userDefinedSeqComparator.compare(e2.value(), e1.value());
+                if (result != 0) {
+                    return result;
+                }
+                return defaultComparator.compare(e1, e2);
+            };
+        }
     }
 
     /** Compared with heapsort, {@link LoserTree} will only produce one batch. */

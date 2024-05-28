@@ -678,6 +678,10 @@ public class FileStoreCommitImpl implements FileStoreCommit {
         int cnt = 0;
         while (true) {
             Snapshot latestSnapshot = snapshotManager.latestSnapshot();
+            // setup snapshotId
+            long latestSnapshotId =
+                    latestSnapshot == null ? Snapshot.FIRST_SNAPSHOT_ID : latestSnapshot.id() + 1;
+            tableFiles.forEach(m -> m.file().setSnapshotId(latestSnapshotId));
             cnt++;
             if (tryCommitOnce(
                     tableFiles,

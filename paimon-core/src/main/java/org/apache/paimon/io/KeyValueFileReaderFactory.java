@@ -97,16 +97,20 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
 
     @Override
     public RecordReader<KeyValue> createRecordReader(DataFileMeta file) throws IOException {
-        return createRecordReader(file.schemaId(), file.fileName(), file.fileSize(), file.level());
+        return createRecordReader(
+                file.schemaId(), file.fileName(), file.fileSize(), file.level(), file.snapshotId());
     }
 
     public RecordReader<KeyValue> createRecordReader(
-            long schemaId, String fileName, long fileSize, int level) throws IOException {
+            long schemaId, String fileName, long fileSize, int level, long snapshotId)
+            throws IOException {
         if (fileSize >= asyncThreshold && fileName.endsWith("orc")) {
             return new AsyncRecordReader<>(
-                    () -> createRecordReader(schemaId, fileName, level, false, 2, fileSize));
+                    () ->
+                            createRecordReader(
+                                    schemaId, fileName, level, false, 2, fileSize, snapshotId));
         }
-        return createRecordReader(schemaId, fileName, level, true, null, fileSize);
+        return createRecordReader(schemaId, fileName, level, true, null, fileSize, snapshotId);
     }
 
     private RecordReader<KeyValue> createRecordReader(
@@ -115,7 +119,8 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
             int level,
             boolean reuseFormat,
             @Nullable Integer orcPoolSize,
-            long fileSize)
+            long fileSize,
+            long snapshotId)
             throws IOException {
         String formatIdentifier = DataFilePathFactory.formatIdentifier(fileName);
 
@@ -152,7 +157,7 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
         }
 
         return new KeyValueDataFileRecordReader(
-                fileRecordReader, keyType, valueType, level, ignoreDelete);
+                fileRecordReader, keyType, valueType, level, ignoreDelete, snapshotId);
     }
 
     public static Builder builder(

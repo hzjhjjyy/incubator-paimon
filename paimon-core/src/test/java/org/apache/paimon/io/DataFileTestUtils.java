@@ -56,7 +56,8 @@ public class DataFileTestUtils {
                 Timestamp.fromEpochMillis(100),
                 maxSeq - minSeq + 1,
                 null,
-                FileSource.APPEND);
+                FileSource.APPEND,
+                0L);
     }
 
     public static DataFileMeta newFile() {

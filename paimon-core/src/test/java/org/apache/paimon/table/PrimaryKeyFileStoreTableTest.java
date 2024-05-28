@@ -65,6 +65,9 @@ import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.CompatibilityTestUtils;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -75,11 +78,16 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.paimon.CoreOptions.BRANCH;
 import static org.apache.paimon.CoreOptions.BUCKET;
@@ -89,10 +97,13 @@ import static org.apache.paimon.CoreOptions.CHANGELOG_PRODUCER;
 import static org.apache.paimon.CoreOptions.ChangelogProducer.LOOKUP;
 import static org.apache.paimon.CoreOptions.DELETION_VECTORS_ENABLED;
 import static org.apache.paimon.CoreOptions.FILE_FORMAT;
+import static org.apache.paimon.CoreOptions.NUM_SORTED_RUNS_COMPACTION_TRIGGER;
+import static org.apache.paimon.CoreOptions.SEQUENCE_FIELD;
 import static org.apache.paimon.CoreOptions.SNAPSHOT_EXPIRE_LIMIT;
 import static org.apache.paimon.CoreOptions.SOURCE_SPLIT_OPEN_FILE_COST;
 import static org.apache.paimon.CoreOptions.SOURCE_SPLIT_TARGET_SIZE;
 import static org.apache.paimon.CoreOptions.TARGET_FILE_SIZE;
+import static org.apache.paimon.CoreOptions.WRITE_ONLY;
 import static org.apache.paimon.Snapshot.CommitKind.COMPACT;
 import static org.apache.paimon.data.DataFormatTestUtil.internalRowToString;
 import static org.apache.paimon.io.DataFileTestUtils.row;
@@ -1468,8 +1479,7 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
                 createFileStoreTable(
                         options ->
                                 options.set(
-                                        CoreOptions.CHANGELOG_PRODUCER,
-                                        CoreOptions.ChangelogProducer.INPUT));
+                                        CHANGELOG_PRODUCER, CoreOptions.ChangelogProducer.INPUT));
         prepareRollbackTable(commitTimes, table);
 
         int t1 = 1;
@@ -1508,6 +1518,60 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
         // table-path/changelog
         // table-path/changelog/LATEST
         // table-path/changelog/EARLIEST
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("multistreamConcurrencyWriteParameters")
+    public void testMultistreamConcurrencyTableWrite(
+            String testName, Consumer<Options> withSequenceField, List<String> result)
+            throws Exception {
+        FileStoreTable tableWithCompact =
+                createFileStoreTable(
+                        conf -> {
+                            conf.setString(FILE_FORMAT.key(), "orc");
+                            conf.setInteger(NUM_SORTED_RUNS_COMPACTION_TRIGGER.key(), 2);
+                            withSequenceField.accept(conf);
+                        });
+        int withoutCompact = 3;
+        FileStoreTable[] tableWithoutCompact = new FileStoreTable[withoutCompact];
+        for (int i = 0; i < withoutCompact; i++) {
+            tableWithoutCompact[i] =
+                    createFileStoreTable(
+                            conf -> {
+                                conf.setString(FILE_FORMAT.key(), "orc");
+                                conf.setString(WRITE_ONLY.key(), "true");
+                                withSequenceField.accept(conf);
+                            });
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        CompletableFuture<Void> future1 =
+                CompletableFuture.runAsync(
+                        new WriteRunnable(tableWithoutCompact[0], false, Arrays.asList(1, 2), 4),
+                        executor);
+        CompletableFuture<Void> future2 =
+                CompletableFuture.runAsync(
+                        new WriteRunnable(tableWithoutCompact[1], false, Arrays.asList(2, 3), 2),
+                        executor);
+        CompletableFuture<Void> future1And2 = CompletableFuture.allOf(future1, future2);
+        CompletableFuture<Void> future3 =
+                future1And2.thenRunAsync(
+                        new WriteRunnable(tableWithCompact, true, Arrays.asList(1, 2, 3), 3),
+                        executor);
+        CompletableFuture<Void> future4 =
+                future3.thenRunAsync(
+                        new WriteRunnable(tableWithoutCompact[2], false, Arrays.asList(3, 4), 1),
+                        executor);
+        CompletableFuture.allOf(future1, future2, future3, future4).join();
+
+        assertThat(
+                        getResult(
+                                tableWithCompact.newRead(),
+                                toSplits(tableWithCompact.newSnapshotReader().read().dataSplits()),
+                                BATCH_ROW_TO_STRING))
+                .containsAnyElementsOf(result);
+
+        executor.shutdown();
     }
 
     private void assertReadChangelog(int id, FileStoreTable table) throws Exception {
@@ -1674,5 +1738,63 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
                                 options.toMap(),
                                 ""));
         return new PrimaryKeyFileStoreTable(FileIOFinder.find(tablePath), tablePath, tableSchema);
+    }
+
+    private static Stream<Arguments> multistreamConcurrencyWriteParameters() {
+        return Stream.of(
+                Arguments.of(
+                        "withoutSequenceFiled",
+                        (Consumer<Options>) (conf -> {}),
+                        Arrays.asList(
+                                "1|1|3|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|2|6|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|3|3|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|4|4|binary|varbinary|mapKey:mapVal|multiset")),
+                Arguments.of(
+                        "withSequenceField",
+                        (Consumer<Options>)
+                                (conf -> {
+                                    conf.setString(SEQUENCE_FIELD.key(), "b");
+                                }),
+                        Arrays.asList(
+                                "1|1|4|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|2|8|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|3|9|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|4|4|binary|varbinary|mapKey:mapVal|multiset")));
+    }
+
+    private class WriteRunnable implements Runnable {
+
+        private final FileStoreTable table;
+        private final boolean waitCompaction;
+        private final List<Integer> keyRange;
+        private final long id;
+
+        public WriteRunnable(
+                FileStoreTable table, boolean waitCompaction, List<Integer> keyRange, long id) {
+            this.table = table;
+            this.waitCompaction = waitCompaction;
+            this.keyRange = keyRange;
+            this.id = id;
+        }
+
+        @Override
+        public void run() {
+            try {
+                String cu = UUID.randomUUID().toString();
+                StreamTableWrite write = table.newWrite(cu);
+                StreamTableCommit commit = table.newCommit(cu);
+
+                for (Integer key : keyRange) {
+                    write.write(rowData(1, key, key * id));
+                }
+
+                commit.commit(id, write.prepareCommit(waitCompaction, id));
+                write.close();
+                commit.close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }

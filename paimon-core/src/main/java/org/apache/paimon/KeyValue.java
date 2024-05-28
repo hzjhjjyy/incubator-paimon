@@ -53,6 +53,7 @@ public class KeyValue {
     private InternalRow value;
     // determined after read from file
     private int level;
+    private long snapshotId;
 
     public KeyValue replace(InternalRow key, RowKind valueKind, InternalRow value) {
         return replace(key, UNKNOWN_SEQUENCE, valueKind, value);
@@ -109,6 +110,15 @@ public class KeyValue {
 
     public KeyValue setLevel(int level) {
         this.level = level;
+        return this;
+    }
+
+    public long snapshotId() {
+        return snapshotId;
+    }
+
+    public KeyValue setSnapshotId(long snapshotId) {
+        this.snapshotId = snapshotId;
         return this;
     }
 

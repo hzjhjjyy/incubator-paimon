@@ -74,7 +74,8 @@ public class ManifestCommittableSerializerCompatibilityTest {
                         Timestamp.fromLocalDateTime(LocalDateTime.parse("2022-03-02T20:20:12")),
                         11L,
                         new byte[] {1, 2, 4},
-                        FileSource.COMPACT);
+                        FileSource.COMPACT,
+                        0L);
         List<DataFileMeta> dataFiles = Collections.singletonList(dataFile);
 
         LinkedHashMap<String, Pair<Integer, Integer>> dvRanges = new LinkedHashMap<>();
@@ -134,7 +135,8 @@ public class ManifestCommittableSerializerCompatibilityTest {
                         Timestamp.fromLocalDateTime(LocalDateTime.parse("2022-03-02T20:20:12")),
                         11L,
                         new byte[] {1, 2, 4},
-                        null);
+                        null,
+                        0L);
         List<DataFileMeta> dataFiles = Collections.singletonList(dataFile);
 
         LinkedHashMap<String, Pair<Integer, Integer>> dvRanges = new LinkedHashMap<>();

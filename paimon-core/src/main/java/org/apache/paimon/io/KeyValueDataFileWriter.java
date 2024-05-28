@@ -175,6 +175,8 @@ public class KeyValueDataFileWriter
                 deleteRecordCount,
                 // TODO: enable file filter for primary key table (e.g. deletion table).
                 null,
-                fileSource);
+                fileSource,
+                // level0 should be merged last
+                Long.MAX_VALUE);
     }
 }

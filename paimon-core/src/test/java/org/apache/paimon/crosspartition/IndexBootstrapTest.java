@@ -143,7 +143,8 @@ public class IndexBootstrapTest extends TableTestBase {
                                 .toLocalDateTime()),
                 0L,
                 null,
-                FileSource.APPEND);
+                FileSource.APPEND,
+                0L);
     }
 
     private Pair<InternalRow, Integer> row(int pt, int col, int pk, int bucket) {

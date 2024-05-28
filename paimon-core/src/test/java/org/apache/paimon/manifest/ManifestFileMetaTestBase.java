@@ -84,7 +84,8 @@ public abstract class ManifestFileMetaTestBase {
                         Timestamp.fromEpochMillis(200000),
                         0L, // not used
                         null, // not used
-                        FileSource.APPEND));
+                        FileSource.APPEND,
+                        0L));
     }
 
     protected ManifestFileMeta makeManifest(ManifestEntry... entries) {

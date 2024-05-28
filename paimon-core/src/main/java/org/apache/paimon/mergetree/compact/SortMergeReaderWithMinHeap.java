@@ -51,24 +51,33 @@ public class SortMergeReaderWithMinHeap<T> implements SortMergeReader<T> {
         this.userKeyComparator = userKeyComparator;
         this.mergeFunctionWrapper = mergeFunctionWrapper;
 
-        this.minHeap =
-                new PriorityQueue<>(
-                        (e1, e2) -> {
-                            int result = userKeyComparator.compare(e1.kv.key(), e2.kv.key());
-                            if (result != 0) {
-                                return result;
-                            }
-                            if (userDefinedSeqComparator != null) {
-                                result =
-                                        userDefinedSeqComparator.compare(
-                                                e1.kv.value(), e2.kv.value());
-                                if (result != 0) {
-                                    return result;
-                                }
-                            }
-                            return Long.compare(e1.kv.sequenceNumber(), e2.kv.sequenceNumber());
-                        });
+        this.minHeap = new PriorityQueue<>(createElementComparator(userDefinedSeqComparator));
         this.polled = new ArrayList<>();
+    }
+
+    private Comparator<Element> createElementComparator(
+            @Nullable FieldsComparator userDefinedSeqComparator) {
+        Comparator<KeyValue> defaultComparator =
+                Comparator.comparingLong(KeyValue::snapshotId)
+                        .thenComparingLong(KeyValue::sequenceNumber);
+
+        return (e1, e2) -> {
+            KeyValue kv1 = e1.kv;
+            KeyValue kv2 = e2.kv;
+            int result = userKeyComparator.compare(kv1.key(), kv2.key());
+            if (result != 0) {
+                return result;
+            }
+            if (userDefinedSeqComparator == null) {
+                return defaultComparator.compare(kv1, kv2);
+            } else {
+                result = userDefinedSeqComparator.compare(kv1.value(), kv2.value());
+                if (result != 0) {
+                    return result;
+                }
+                return defaultComparator.compare(kv1, kv2);
+            }
+        };
     }
 
     @Nullable
