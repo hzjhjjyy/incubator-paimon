@@ -53,11 +53,15 @@ public class SortMergeReaderWithLoserTree<T> implements SortMergeReader<T> {
             @Nullable FieldsComparator userDefinedSeqComparator) {
         Comparator<KeyValue> defaultComparator =
                 (e1, e2) -> {
-                    int result = Long.compare(e2.snapshotId(), e1.snapshotId());
-                    if (result != 0) {
-                        return result;
+                    if (e1.level() != e2.level()) {
+                        return Long.compare(e2.sequenceNumber(), e1.sequenceNumber());
+                    } else {
+                        int result = Long.compare(e2.snapshotId(), e1.snapshotId());
+                        if (result != 0) {
+                            return result;
+                        }
+                        return Long.compare(e2.sequenceNumber(), e1.sequenceNumber());
                     }
-                    return Long.compare(e2.sequenceNumber(), e1.sequenceNumber());
                 };
 
         if (userDefinedSeqComparator == null) {

@@ -466,7 +466,7 @@ public class DataFileMeta {
                         + "minKey: %s, maxKey: %s, keyStats: %s, valueStats: %s, "
                         + "minSequenceNumber: %d, maxSequenceNumber: %d, "
                         + "schemaId: %d, level: %d, extraFiles: %s, creationTime: %s, "
-                        + "deleteRowCount: %d, fileSource: %s, snapshotId: &d}",
+                        + "deleteRowCount: %d, fileSource: %s, snapshotId: %d}",
                 fileName,
                 fileSize,
                 rowCount,

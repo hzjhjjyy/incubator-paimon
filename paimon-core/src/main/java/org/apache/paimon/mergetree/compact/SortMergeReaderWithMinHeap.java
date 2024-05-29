@@ -58,8 +58,17 @@ public class SortMergeReaderWithMinHeap<T> implements SortMergeReader<T> {
     private Comparator<Element> createElementComparator(
             @Nullable FieldsComparator userDefinedSeqComparator) {
         Comparator<KeyValue> defaultComparator =
-                Comparator.comparingLong(KeyValue::snapshotId)
-                        .thenComparingLong(KeyValue::sequenceNumber);
+                (e1, e2) -> {
+                    if (e1.level() != e2.level()) {
+                        return Long.compare(e1.sequenceNumber(), e2.sequenceNumber());
+                    } else {
+                        int result = Long.compare(e1.snapshotId(), e2.snapshotId());
+                        if (result != 0) {
+                            return result;
+                        }
+                        return Long.compare(e1.sequenceNumber(), e2.sequenceNumber());
+                    }
+                };
 
         return (e1, e2) -> {
             KeyValue kv1 = e1.kv;
