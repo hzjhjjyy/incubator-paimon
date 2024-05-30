@@ -61,6 +61,9 @@ public class Levels {
                             if (a.maxSequenceNumber() != b.maxSequenceNumber()) {
                                 // file with larger sequence number should be in front
                                 return Long.compare(b.maxSequenceNumber(), a.maxSequenceNumber());
+                            } else if (a.snapshotId() != b.snapshotId()) {
+                                // file with larger snapshot id should be in front
+                                return Long.compare(b.snapshotId(), a.snapshotId());
                             } else {
                                 // When two or more jobs are writing the same merge tree, it is
                                 // possible that multiple files have the same maxSequenceNumber. In
