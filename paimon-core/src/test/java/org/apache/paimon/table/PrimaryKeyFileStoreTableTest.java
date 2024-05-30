@@ -1574,6 +1574,39 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
         executor.shutdown();
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("tableWriteWithSnapshoIdCompatibility08Parameters")
+    public void testTableWriteWithSnapshoIdCompatibility08(
+            String testName, Consumer<Options> withSequenceField, List<String> result)
+            throws Exception {
+        // already contains 1 commits [(1, 2, 2L), (1, 10, 10L)]
+        CompatibilityTestUtils.unzip(
+                "compatibility/table-primarykey-0.8.zip", tablePath.toUri().getPath());
+        FileStoreTable table =
+                createFileStoreTable(
+                        conf -> {
+                            conf.setString(FILE_FORMAT.key(), "orc");
+                            withSequenceField.accept(conf);
+                        });
+        String cu = UUID.randomUUID().toString();
+        StreamTableWrite write = table.newWrite(cu);
+        StreamTableCommit commit = table.newCommit(cu);
+
+        write.write(rowData(1, 1, 1L));
+        write.write(rowData(1, 2, 1L));
+        write.write(rowData(1, 3, 3L));
+        commit.commit(1L, write.prepareCommit(true, 1L));
+        write.close();
+        commit.close();
+
+        assertThat(
+                        getResult(
+                                table.newRead(),
+                                toSplits(table.newSnapshotReader().read().dataSplits()),
+                                BATCH_ROW_TO_STRING))
+                .containsAnyElementsOf(result);
+    }
+
     private void assertReadChangelog(int id, FileStoreTable table) throws Exception {
         // read the changelog at #{id}
         table =
@@ -1761,6 +1794,29 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
                                 "1|2|8|binary|varbinary|mapKey:mapVal|multiset",
                                 "1|3|9|binary|varbinary|mapKey:mapVal|multiset",
                                 "1|4|4|binary|varbinary|mapKey:mapVal|multiset")));
+    }
+
+    private static Stream<Arguments> tableWriteWithSnapshoIdCompatibility08Parameters() {
+        return Stream.of(
+                Arguments.of(
+                        "withoutSequenceFiled",
+                        (Consumer<Options>) (conf -> {}),
+                        Arrays.asList(
+                                "1|1|1|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|2|1|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|3|3|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|10|10|binary|varbinary|mapKey:mapVal|multiset")),
+                Arguments.of(
+                        "withSequenceField",
+                        (Consumer<Options>)
+                                (conf -> {
+                                    conf.setString(SEQUENCE_FIELD.key(), "b");
+                                }),
+                        Arrays.asList(
+                                "1|1|1|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|2|2|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|3|3|binary|varbinary|mapKey:mapVal|multiset",
+                                "1|10|10|binary|varbinary|mapKey:mapVal|multiset")));
     }
 
     private class WriteRunnable implements Runnable {
