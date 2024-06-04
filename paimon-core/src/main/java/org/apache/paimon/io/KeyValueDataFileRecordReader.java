@@ -34,7 +34,6 @@ public class KeyValueDataFileRecordReader implements RecordReader<KeyValue> {
     private final RecordReader<InternalRow> reader;
     private final KeyValueSerializer serializer;
     private final int level;
-    private final boolean ignoreDelete;
     private final long snapshotId;
 
     public KeyValueDataFileRecordReader(
@@ -42,12 +41,10 @@ public class KeyValueDataFileRecordReader implements RecordReader<KeyValue> {
             RowType keyType,
             RowType valueType,
             int level,
-            boolean ignoreDelete,
             long snapshotId) {
         this.reader = reader;
         this.serializer = new KeyValueSerializer(keyType, valueType);
         this.level = level;
-        this.ignoreDelete = ignoreDelete;
         this.snapshotId = snapshotId;
     }
 
@@ -59,18 +56,14 @@ public class KeyValueDataFileRecordReader implements RecordReader<KeyValue> {
             return null;
         }
 
-        RecordIterator<KeyValue> transformed =
-                iterator.transform(
-                        internalRow ->
-                                internalRow == null
-                                        ? null
-                                        : serializer
-                                                .fromRow(internalRow)
-                                                .setLevel(level)
-                                                .setSnapshotId(snapshotId));
-        // In 0.7- versions, the delete records might be written into data file even when
-        // ignore-delete configured, so the reader should also filter the delete records
-        return ignoreDelete ? transformed.filter(KeyValue::isAdd) : transformed;
+        return iterator.transform(
+                internalRow ->
+                        internalRow == null
+                                ? null
+                                : serializer
+                                        .fromRow(internalRow)
+                                        .setLevel(level)
+                                        .setSnapshotId(snapshotId));
     }
 
     @Override

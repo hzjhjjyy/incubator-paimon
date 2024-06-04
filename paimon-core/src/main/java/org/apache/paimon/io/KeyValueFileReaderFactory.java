@@ -68,7 +68,6 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
     private final Map<FormatKey, BulkFormatMapping> bulkFormatMappings;
     private final BinaryRow partition;
     private final DeletionVector.Factory dvFactory;
-    private final boolean ignoreDelete;
 
     private KeyValueFileReaderFactory(
             FileIO fileIO,
@@ -92,7 +91,6 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
         this.partition = partition;
         this.bulkFormatMappings = new HashMap<>();
         this.dvFactory = dvFactory;
-        this.ignoreDelete = CoreOptions.fromMap(schema.options()).ignoreDelete();
     }
 
     @Override
@@ -157,7 +155,7 @@ public class KeyValueFileReaderFactory implements FileReaderFactory<KeyValue> {
         }
 
         return new KeyValueDataFileRecordReader(
-                fileRecordReader, keyType, valueType, level, ignoreDelete, snapshotId);
+                fileRecordReader, keyType, valueType, level, snapshotId);
     }
 
     public static Builder builder(
