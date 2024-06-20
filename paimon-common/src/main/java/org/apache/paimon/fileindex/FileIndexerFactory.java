@@ -16,13 +16,15 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.spark.sql
+package org.apache.paimon.fileindex;
 
-trait WithTableOptions {
+import org.apache.paimon.options.Options;
+import org.apache.paimon.types.DataType;
 
-  // 3: fixed bucket, -1: dynamic bucket
-  protected val bucketModes: Seq[Int] = Seq(3, -1)
+/** File index factory to construct {@link FileIndexer}. */
+public interface FileIndexerFactory {
 
-  protected val withPk: Seq[Boolean] = Seq(true, false)
+    String identifier();
 
+    FileIndexer create(DataType type, Options options);
 }
