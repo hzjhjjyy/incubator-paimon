@@ -33,6 +33,7 @@ import org.apache.paimon.options.Options;
 import org.apache.paimon.options.description.DescribedEnum;
 import org.apache.paimon.options.description.Description;
 import org.apache.paimon.options.description.InlineElement;
+import org.apache.paimon.utils.DateTimeUtils;
 import org.apache.paimon.utils.MathUtils;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.StringUtils;
@@ -51,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TimeZone;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -553,6 +555,13 @@ public class CoreOptions implements Serializable {
                     .withDeprecatedKeys("log.scan")
                     .withDescription("Specify the scanning behavior of the source.");
 
+    public static final ConfigOption<String> SCAN_TIMESTAMP =
+            key("scan.timestamp")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "Optional timestamp used in case of \"from-timestamp\" scan mode, it will be automatically converted to timestamp in unix milliseconds, use local time zone");
+
     public static final ConfigOption<Long> SCAN_TIMESTAMP_MILLIS =
             key("scan.timestamp-millis")
                     .longType()
@@ -1048,13 +1057,16 @@ public class CoreOptions implements Serializable {
             key("tag.num-retained-max")
                     .intType()
                     .noDefaultValue()
-                    .withDescription("The maximum number of tags to retain.");
+                    .withDescription(
+                            "The maximum number of tags to retain. It only affects auto-created tags.");
 
     public static final ConfigOption<Duration> TAG_DEFAULT_TIME_RETAINED =
             key("tag.default-time-retained")
                     .durationType()
                     .noDefaultValue()
-                    .withDescription("The default maximum time retained for newly created tags.");
+                    .withDescription(
+                            "The default maximum time retained for newly created tags. "
+                                    + "It affects both auto-created tags and manually created (by procedure) tags.");
 
     public static final ConfigOption<Duration> SNAPSHOT_WATERMARK_IDLE_TIMEOUT =
             key("snapshot.watermark-idle-timeout")
@@ -1193,6 +1205,17 @@ public class CoreOptions implements Serializable {
                     .stringType()
                     .noDefaultValue()
                     .withDescription("Specifies the commit user prefix.");
+
+    public static final ConfigOption<Boolean> CHANGELOG_PRODUCER_LOOKUP_WAIT =
+            key("changelog-producer.lookup-wait")
+                    .booleanType()
+                    .defaultValue(true)
+                    .withDescription(
+                            "When "
+                                    + CoreOptions.CHANGELOG_PRODUCER.key()
+                                    + " is set to "
+                                    + ChangelogProducer.LOOKUP.name()
+                                    + ", commit will wait for changelog generation by lookup.");
 
     private final Options options;
 
@@ -1609,7 +1632,8 @@ public class CoreOptions implements Serializable {
     public static StartupMode startupMode(Options options) {
         StartupMode mode = options.get(SCAN_MODE);
         if (mode == StartupMode.DEFAULT) {
-            if (options.getOptional(SCAN_TIMESTAMP_MILLIS).isPresent()) {
+            if (options.getOptional(SCAN_TIMESTAMP_MILLIS).isPresent()
+                    || options.getOptional(SCAN_TIMESTAMP).isPresent()) {
                 return StartupMode.FROM_TIMESTAMP;
             } else if (options.getOptional(SCAN_SNAPSHOT_ID).isPresent()
                     || options.getOptional(SCAN_TAG_NAME).isPresent()
@@ -1632,7 +1656,17 @@ public class CoreOptions implements Serializable {
     }
 
     public Long scanTimestampMills() {
-        return options.get(SCAN_TIMESTAMP_MILLIS);
+        String timestampStr = scanTimestamp();
+        Long timestampMillis = options.get(SCAN_TIMESTAMP_MILLIS);
+        if (timestampMillis == null && timestampStr != null) {
+            return DateTimeUtils.parseTimestampData(timestampStr, 3, TimeZone.getDefault())
+                    .getMillisecond();
+        }
+        return timestampMillis;
+    }
+
+    public String scanTimestamp() {
+        return options.get(SCAN_TIMESTAMP);
     }
 
     public Long scanWatermark() {
@@ -1891,6 +1925,11 @@ public class CoreOptions implements Serializable {
     @Nullable
     public String recordLevelTimeField() {
         return options.get(RECORD_LEVEL_TIME_FIELD);
+    }
+
+    public boolean prepareCommitWaitCompaction() {
+        return changelogProducer() == ChangelogProducer.LOOKUP
+                && options.get(CHANGELOG_PRODUCER_LOOKUP_WAIT);
     }
 
     /** Specifies the merge engine for table with primary key. */
@@ -2224,6 +2263,10 @@ public class CoreOptions implements Serializable {
      */
     public static void setDefaultValues(Options options) {
         if (options.contains(SCAN_TIMESTAMP_MILLIS) && !options.contains(SCAN_MODE)) {
+            options.set(SCAN_MODE, StartupMode.FROM_TIMESTAMP);
+        }
+
+        if (options.contains(SCAN_TIMESTAMP) && !options.contains(SCAN_MODE)) {
             options.set(SCAN_MODE, StartupMode.FROM_TIMESTAMP);
         }
 

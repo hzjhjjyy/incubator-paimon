@@ -63,6 +63,12 @@ under the License.
             <td>Whether to double write to a changelog file. This changelog file keeps the details of data changes, it can be read directly during stream reads. This can be applied to tables with primary keys. <br /><br />Possible values:<ul><li>"none": No changelog file.</li><li>"input": Double write to a changelog file when flushing memory table, the changelog is from input.</li><li>"full-compaction": Generate changelog files with each full compaction.</li><li>"lookup": Generate changelog files through 'lookup' before committing the data writing.</li></ul></td>
         </tr>
         <tr>
+            <td><h5>changelog-producer.lookup-wait</h5></td>
+            <td style="word-wrap: break-word;">true</td>
+            <td>Boolean</td>
+            <td>When changelog-producer is set to LOOKUP, commit will wait for changelog generation by lookup.</td>
+        </tr>
+        <tr>
             <td><h5>changelog-producer.row-deduplicate</h5></td>
             <td style="word-wrap: break-word;">false</td>
             <td>Boolean</td>
@@ -582,6 +588,12 @@ This config option does not affect the default filesystem metastore.</td>
             <td>Optional tag name used in case of "from-snapshot" scan mode.</td>
         </tr>
         <tr>
+            <td><h5>scan.timestamp</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>String</td>
+            <td>Optional timestamp used in case of "from-timestamp" scan mode, it will be automatically converted to timestamp in unix milliseconds, use local time zone</td>
+        </tr>
+        <tr>
             <td><h5>scan.timestamp-millis</h5></td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Long</td>
@@ -742,13 +754,13 @@ If the data size allocated for the sorting task is uneven,which may lead to perf
             <td><h5>tag.default-time-retained</h5></td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Duration</td>
-            <td>The default maximum time retained for newly created tags.</td>
+            <td>The default maximum time retained for newly created tags. It affects both auto-created tags and manually created (by procedure) tags.</td>
         </tr>
         <tr>
             <td><h5>tag.num-retained-max</h5></td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Integer</td>
-            <td>The maximum number of tags to retain.</td>
+            <td>The maximum number of tags to retain. It only affects auto-created tags.</td>
         </tr>
         <tr>
             <td><h5>tag.period-formatter</h5></td>

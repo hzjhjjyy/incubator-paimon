@@ -238,6 +238,24 @@ All available procedures are listed below.
          CALL sys.expire_snapshots(`table` => 'default.T', older_than => '2024-01-01 12:00:00', max_deletes => 10)<br/><br/>
       </td>
    </tr>
+<tr>
+      <td>expire_partitions</td>
+      <td>
+         CALL sys.expire_partitions(table, expiration_time, timestamp_formatter)<br/><br/>
+      </td>
+      <td>
+         To expire partitions. Argument:
+            <li>table: the target table identifier. Cannot be empty.</li>
+            <li>expiration_time: the expiration interval of a partition. A partition will be expired if it‘s lifetime is over this value. Partition time is extracted from the partition value.</li>
+            <li>timestamp_formatter: the formatter to format timestamp from string.</li>
+      </td>
+      <td>
+         -- for Flink 1.18<br/><br/>
+         CALL sys.expire_partitions('default.T', '1 d', 'yyyy-MM-dd')<br/><br/>
+         -- for Flink 1.19 and later<br/><br/>
+         CALL sys.expire_partitions(`table` => 'default.T', expiration_time => '1 d', timestamp_formatter => 'yyyy-MM-dd')<br/><br/>
+      </td>
+   </tr>
     <tr>
       <td>repair</td>
       <td>
@@ -255,6 +273,23 @@ All available procedures are listed below.
             <li>tableName: the target table identifier.</li>
       </td>
       <td>CALL sys.repair('test_db.T')</td>
+   </tr>
+    <tr>
+      <td>rewrite_file_index</td>
+      <td>
+         CALL sys.rewrite_file_index(&ltidentifier&gt [, &ltpartitions&gt])<br/><br/>
+      </td>
+      <td>
+         Rewrite the file index for the table. Argument:
+            <li>identifier: &ltdatabaseName&gt.&lttableName&gt.</li>
+            <li>partitions : specific partitions.</li>
+      </td>
+      <td>
+         -- rewrite the file index for the whole table<br/>
+         CALL sys.rewrite_file_index('test_db.T')<br/><br/>
+         -- repair all tables in a specific partition<br/>
+         CALL sys.rewrite_file_index('test_db.T', 'pt=a')<br/><br/>
+     </td>
    </tr>
    </tbody>
 </table>
