@@ -66,6 +66,8 @@ import org.apache.paimon.utils.CompatibilityTestUtils;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -97,6 +99,8 @@ import static org.apache.paimon.CoreOptions.CHANGELOG_PRODUCER;
 import static org.apache.paimon.CoreOptions.ChangelogProducer.LOOKUP;
 import static org.apache.paimon.CoreOptions.DELETION_VECTORS_ENABLED;
 import static org.apache.paimon.CoreOptions.FILE_FORMAT;
+import static org.apache.paimon.CoreOptions.MERGE_ENGINE;
+import static org.apache.paimon.CoreOptions.MergeEngine.FIRST_ROW;
 import static org.apache.paimon.CoreOptions.NUM_SORTED_RUNS_COMPACTION_TRIGGER;
 import static org.apache.paimon.CoreOptions.SEQUENCE_FIELD;
 import static org.apache.paimon.CoreOptions.SNAPSHOT_EXPIRE_LIMIT;
@@ -800,6 +804,28 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
     }
 
     @Test
+    public void testWithShardDeletionVectors() throws Exception {
+        FileStoreTable table =
+                createFileStoreTable(
+                        conf -> {
+                            conf.set(BUCKET, 5);
+                            conf.set(DELETION_VECTORS_ENABLED, true);
+                        });
+        innerTestWithShard(table);
+    }
+
+    @Test
+    public void testWithShardFirstRow() throws Exception {
+        FileStoreTable table =
+                createFileStoreTable(
+                        conf -> {
+                            conf.set(BUCKET, 5);
+                            conf.set(MERGE_ENGINE, FIRST_ROW);
+                        });
+        innerTestWithShard(table);
+    }
+
+    @Test
     public void testSlowCommit() throws Exception {
         FileStoreTable table = createFileStoreTable();
         StreamTableWrite write = table.newWrite(commitUser);
@@ -1478,14 +1504,15 @@ public class PrimaryKeyFileStoreTableTest extends FileStoreTableTestBase {
                                 "1|2|200|binary|varbinary|mapKey:mapVal|multiset"));
     }
 
-    @Test
-    public void testRollbackToTagWithChangelogDecoupled() throws Exception {
+    @ParameterizedTest(name = "changelog-producer = {0}")
+    @ValueSource(strings = {"none", "input"})
+    public void testRollbackToTagWithChangelogDecoupled(String changelogProducer) throws Exception {
         int commitTimes = ThreadLocalRandom.current().nextInt(100) + 6;
         FileStoreTable table =
                 createFileStoreTable(
                         options ->
-                                options.set(
-                                        CHANGELOG_PRODUCER, CoreOptions.ChangelogProducer.INPUT));
+                                options.setString(
+                                        CoreOptions.CHANGELOG_PRODUCER.key(), changelogProducer));
         prepareRollbackTable(commitTimes, table);
 
         int t1 = 1;
