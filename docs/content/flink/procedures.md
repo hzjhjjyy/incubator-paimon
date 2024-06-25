@@ -67,9 +67,13 @@ All available procedures are listed below.
             <li>order_strategy(optional): 'order' or 'zorder' or 'hilbert' or 'none'.</li>
             <li>order_by(optional): the columns need to be sort. Left empty if 'order_strategy' is 'none'.</li>
             <li>options(optional): additional dynamic options of the table.</li>
+            <li>where(optional): partition predicate(Can't be used together with "partitions"). Note: as where is a keyword,a pair of backticks need to add around like `where`.</li>
       </td>
       <td>
-         CALL sys.compact(`table` => 'default.T', partitions => 'p=0', order_strategy => 'zorder', order_by => 'a,b', options => 'sink.parallelism=4')
+         -- use partition filter <br/>
+         CALL sys.compact(`table` => 'default.T', partitions => 'p=0', order_strategy => 'zorder', order_by => 'a,b', options => 'sink.parallelism=4') <br/>
+         -- use partition predicate <br/>
+         CALL sys.compact(`table` => 'default.T', `where` => 'dt>10 and h<20', order_strategy => 'zorder', order_by => 'a,b', options => 'sink.parallelism=4')
       </td>
    </tr>
    <tr>
@@ -109,9 +113,10 @@ All available procedures are listed below.
             <li>identifier: the target table identifier. Cannot be empty.</li>
             <li>tagName: name of the new tag.</li>
             <li>snapshotId (Long): id of the snapshot which the new tag is based on.</li>
+            <li>time_retained: The maximum time retained for newly created tags.</li>
       </td>
       <td>
-         CALL sys.create_tag('default.T', 'my_tag', 10)
+         CALL sys.create_tag('default.T', 'my_tag', 10, '1 d')
       </td>
    </tr>
    <tr>

@@ -82,10 +82,11 @@ This section introduce all available spark procedures about paimon.
             <li>table: the target table identifier. Cannot be empty.</li>
             <li>tag: name of the new tag. Cannot be empty.</li>
             <li>snapshot(Long):  id of the snapshot which the new tag is based on.</li>
+            <li>time_retained: The maximum time retained for newly created tags.</li>
       </td>
       <td>
-         -- based on snapshot 10 <br/>
-         CALL sys.create_tag(table => 'default.T', tag => 'my_tag', snapshot => 10) <br/>
+         -- based on snapshot 10 with 1d <br/>
+         CALL sys.create_tag(table => 'default.T', tag => 'my_tag', snapshot => 10, time_retained => '1 d') <br/>
          -- based on the latest snapshot <br/>
          CALL sys.create_tag(table => 'default.T', tag => 'my_tag')
       </td>
@@ -142,6 +143,28 @@ This section introduce all available spark procedures about paimon.
       </td>
       <td>
           CALL sys.repair('test_db.T')
+      </td>
+    </tr>
+    <tr>
+      <td>merge_branch</td>
+      <td>
+         To merge a branch to main branch. Arguments:
+            <li>table: the target table identifier. Cannot be empty.</li>
+            <li>branch: name of the branch to be merged.</li>
+      </td>
+      <td>
+          CALL sys.merge_branch(table => 'test_db.T', branch => 'test_branch')
+      </td>
+    </tr>
+    <tr>
+      <td>replace_branch</td>
+      <td>
+         To replace main branch with specified branch. Arguments:
+            <li>table: the target table identifier. Cannot be empty.</li>
+            <li>branch: name of the branch to be replaced.</li>
+      </td>
+      <td>
+          CALL sys.replace_branch(table => 'test_db.T', branch => 'test_branch')
       </td>
     </tr>
     </tbody>
