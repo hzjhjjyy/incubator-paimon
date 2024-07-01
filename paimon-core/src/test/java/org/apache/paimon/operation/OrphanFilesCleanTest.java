@@ -172,14 +172,14 @@ public class OrphanFilesCleanTest {
 
         // first check, nothing will be deleted because the default olderThan interval is 1 day
         OrphanFilesClean orphanFilesClean = new OrphanFilesClean(table);
-        assertThat(orphanFilesClean.clean()).isEqualTo(0);
+        assertThat(orphanFilesClean.clean().size()).isEqualTo(0);
 
         // second check
         orphanFilesClean = new OrphanFilesClean(table);
         setOlderThan(orphanFilesClean);
-        orphanFilesClean.clean();
+        List<Path> deleted = orphanFilesClean.clean();
         try {
-            validate(orphanFilesClean.getDeleteFiles(), snapshotData, new HashMap<>());
+            validate(deleted, snapshotData, new HashMap<>());
         } catch (Throwable t) {
             String tableOptions = "Table options:\n" + table.options();
 
@@ -362,14 +362,13 @@ public class OrphanFilesCleanTest {
 
         // first check, nothing will be deleted because the default olderThan interval is 1 day
         OrphanFilesClean orphanFilesClean = new OrphanFilesClean(table);
-        assertThat(orphanFilesClean.clean()).isEqualTo(0);
+        assertThat(orphanFilesClean.clean().size()).isEqualTo(0);
 
         // second check
         orphanFilesClean = new OrphanFilesClean(table);
         setOlderThan(orphanFilesClean);
-        orphanFilesClean.clean();
-        List<Path> cleanFiles = orphanFilesClean.getDeleteFiles();
-        validate(cleanFiles, snapshotData, changelogData);
+        List<Path> deleted = orphanFilesClean.clean();
+        validate(deleted, snapshotData, changelogData);
     }
 
     /** Manually make a FileNotFoundException to simulate snapshot expire while clean. */
@@ -397,7 +396,7 @@ public class OrphanFilesCleanTest {
 
         OrphanFilesClean orphanFilesClean = new OrphanFilesClean(table);
         setOlderThan(orphanFilesClean);
-        assertThat(orphanFilesClean.clean()).isGreaterThan(0);
+        assertThat(orphanFilesClean.clean().size()).isGreaterThan(0);
     }
 
     private void writeData(

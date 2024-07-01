@@ -16,23 +16,26 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.flink.sink;
+package org.apache.paimon.flink.action;
 
-import org.apache.paimon.data.InternalRow;
-import org.apache.paimon.flink.FlinkRowWrapper;
-import org.apache.paimon.flink.utils.InternalTypeInfo;
-import org.apache.paimon.types.RowType;
+import java.util.Map;
 
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.table.data.RowData;
+/** Merge branch action for Flink. */
+public class MergeBranchAction extends TableActionBase {
+    private final String branchName;
 
-/** An util to convert {@link RowData} stream to {@link InternalRow} stream. */
-public class MapToInternalRow {
+    public MergeBranchAction(
+            String warehouse,
+            String databaseName,
+            String tableName,
+            Map<String, String> catalogConfig,
+            String branchName) {
+        super(warehouse, databaseName, tableName, catalogConfig);
+        this.branchName = branchName;
+    }
 
-    public static DataStream<InternalRow> map(DataStream<RowData> input, RowType rowType) {
-        return input.map((MapFunction<RowData, InternalRow>) FlinkRowWrapper::new)
-                .setParallelism(input.getParallelism())
-                .returns(InternalTypeInfo.fromRowType(rowType));
+    @Override
+    public void run() throws Exception {
+        table.mergeBranch(branchName);
     }
 }

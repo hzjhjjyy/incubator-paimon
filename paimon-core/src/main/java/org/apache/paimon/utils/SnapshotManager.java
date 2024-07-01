@@ -47,7 +47,7 @@ import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import static org.apache.paimon.utils.BranchManager.DEFAULT_MAIN_BRANCH;
-import static org.apache.paimon.utils.BranchManager.getBranchPath;
+import static org.apache.paimon.utils.BranchManager.branchPath;
 import static org.apache.paimon.utils.FileUtils.listVersionedFiles;
 
 /** Manager for {@link Snapshot}, providing utility methods related to paths and snapshot hints. */
@@ -90,27 +90,21 @@ public class SnapshotManager implements Serializable {
     }
 
     public Path changelogDirectory() {
-        return new Path(getBranchPath(fileIO, tablePath, branch) + "/changelog");
+        return new Path(branchPath(tablePath, branch) + "/changelog");
     }
 
     public Path longLivedChangelogPath(long snapshotId) {
         return new Path(
-                getBranchPath(fileIO, tablePath, branch)
-                        + "/changelog/"
-                        + CHANGELOG_PREFIX
-                        + snapshotId);
+                branchPath(tablePath, branch) + "/changelog/" + CHANGELOG_PREFIX + snapshotId);
     }
 
     public Path snapshotPath(long snapshotId) {
         return new Path(
-                getBranchPath(fileIO, tablePath, branch)
-                        + "/snapshot/"
-                        + SNAPSHOT_PREFIX
-                        + snapshotId);
+                branchPath(tablePath, branch) + "/snapshot/" + SNAPSHOT_PREFIX + snapshotId);
     }
 
     public Path snapshotDirectory() {
-        return new Path(getBranchPath(fileIO, tablePath, branch) + "/snapshot");
+        return new Path(branchPath(tablePath, branch) + "/snapshot");
     }
 
     public Snapshot snapshot(long snapshotId) {
@@ -291,7 +285,9 @@ public class SnapshotManager implements Serializable {
     public @Nullable Snapshot laterOrEqualWatermark(long watermark) {
         Long earliest = earliestSnapshotId();
         Long latest = latestSnapshotId();
-        if (earliest == null || latest == null) {
+        // If latest == Long.MIN_VALUE don't need next binary search for watermark
+        // which can reduce IO cost with snapshot
+        if (earliest == null || latest == null || snapshot(latest).watermark() == Long.MIN_VALUE) {
             return null;
         }
         Long earliestWatermark = null;
