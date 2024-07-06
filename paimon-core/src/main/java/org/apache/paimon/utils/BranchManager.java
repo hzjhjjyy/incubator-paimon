@@ -41,6 +41,7 @@ import java.util.SortedMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static org.apache.paimon.utils.FileUtils.listOriginalVersionedFiles;
 import static org.apache.paimon.utils.FileUtils.listVersionedDirectories;
 import static org.apache.paimon.utils.FileUtils.listVersionedFileStatus;
 import static org.apache.paimon.utils.Preconditions.checkArgument;
@@ -75,6 +76,16 @@ public class BranchManager {
     /** Return the root Directory of branch. */
     public Path branchDirectory() {
         return new Path(tablePath + "/branch");
+    }
+
+    /** Return the root Directory of branch by given tablePath. */
+    public static Path branchDirectory(Path tablePath) {
+        return new Path(tablePath + "/branch");
+    }
+
+    public static List<String> branchNames(FileIO fileIO, Path tablePath) throws IOException {
+        return listOriginalVersionedFiles(fileIO, branchDirectory(tablePath), BRANCH_PREFIX)
+                .collect(Collectors.toList());
     }
 
     public static boolean isMainBranch(String branch) {
@@ -222,10 +233,10 @@ public class BranchManager {
         }
     }
 
-    public void mergeBranch(String branchName) {
+    public void fastForward(String branchName) {
         checkArgument(
                 !branchName.equals(DEFAULT_MAIN_BRANCH),
-                "Branch name '%s' do not use in merge branch.",
+                "Branch name '%s' do not use in fast-forward.",
                 branchName);
         checkArgument(!StringUtils.isBlank(branchName), "Branch name '%s' is blank.", branchName);
         checkArgument(branchExists(branchName), "Branch name '%s' doesn't exist.", branchName);
@@ -291,7 +302,7 @@ public class BranchManager {
         } catch (IOException e) {
             throw new RuntimeException(
                     String.format(
-                            "Exception occurs when merge branch '%s' (directory in %s).",
+                            "Exception occurs when fast forward '%s' (directory in %s).",
                             branchName, branchPath(tablePath, branchName)),
                     e);
         }

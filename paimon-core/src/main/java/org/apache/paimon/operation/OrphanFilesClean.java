@@ -21,6 +21,8 @@ package org.apache.paimon.operation;
 import org.apache.paimon.Changelog;
 import org.apache.paimon.FileStore;
 import org.apache.paimon.Snapshot;
+import org.apache.paimon.catalog.Catalog;
+import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.FileStatus;
 import org.apache.paimon.fs.Path;
@@ -32,6 +34,7 @@ import org.apache.paimon.manifest.ManifestFile;
 import org.apache.paimon.manifest.ManifestFileMeta;
 import org.apache.paimon.manifest.ManifestList;
 import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.table.Table;
 import org.apache.paimon.utils.DateTimeUtils;
 import org.apache.paimon.utils.FileUtils;
 import org.apache.paimon.utils.SnapshotManager;
@@ -53,6 +56,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -60,6 +66,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import static org.apache.paimon.utils.FileStorePathFactory.BUCKET_PATH_PREFIX;
+import static org.apache.paimon.utils.Preconditions.checkArgument;
 
 /**
  * To remove the data files and metadata files that are not used by table (so-called "orphan
@@ -82,6 +89,7 @@ public class OrphanFilesClean {
 
     private static final int READ_FILE_RETRY_NUM = 3;
     private static final int READ_FILE_RETRY_INTERVAL = 5;
+    private static final int SHOW_LIMIT = 200;
 
     private final SnapshotManager snapshotManager;
     private final TagManager tagManager;
@@ -556,5 +564,52 @@ public class OrphanFilesClean {
             result.add(deleteFiles.get(i).toUri().getPath());
         }
         return result;
+    }
+
+    public static List<OrphanFilesClean> createOrphanFilesCleans(
+            Catalog catalog, String databaseName, @Nullable String tableName)
+            throws Catalog.DatabaseNotExistException, Catalog.TableNotExistException {
+        List<OrphanFilesClean> orphanFilesCleans = new ArrayList<>();
+        List<String> tableNames = Collections.singletonList(tableName);
+        if (tableName == null || "*".equals(tableName)) {
+            tableNames = catalog.listTables(databaseName);
+        }
+
+        for (String t : tableNames) {
+            Identifier identifier = new Identifier(databaseName, t);
+            Table table = catalog.getTable(identifier);
+            checkArgument(
+                    table instanceof FileStoreTable,
+                    "Only FileStoreTable supports remove-orphan-files action. The table type is '%s'.",
+                    table.getClass().getName());
+
+            orphanFilesCleans.add(new OrphanFilesClean((FileStoreTable) table));
+        }
+
+        return orphanFilesCleans;
+    }
+
+    public static String[] executeOrphanFilesClean(List<OrphanFilesClean> tableCleans) {
+        ExecutorService executorService =
+                Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        List<Future<List<Path>>> tasks = new ArrayList<>();
+        for (OrphanFilesClean clean : tableCleans) {
+            tasks.add(executorService.submit(clean::clean));
+        }
+
+        List<Path> cleanOrphanFiles = new ArrayList<>();
+        for (Future<List<Path>> task : tasks) {
+            try {
+                cleanOrphanFiles.addAll(task.get());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException(e);
+            } catch (ExecutionException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        executorService.shutdownNow();
+        return showDeletedFiles(cleanOrphanFiles, SHOW_LIMIT).toArray(new String[0]);
     }
 }

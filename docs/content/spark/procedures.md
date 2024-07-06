@@ -129,12 +129,13 @@ This section introduce all available spark procedures about paimon.
       <td>remove_orphan_files</td>
       <td>
          To remove the orphan data files and metadata files. Arguments:
-            <li>table: the target table identifier. Cannot be empty.</li>
+            <li>table: the target table identifier. Cannot be empty, you can use database_name.* to clean whole database.</li>
             <li>older_than: to avoid deleting newly written files, this procedure only deletes orphan files older than 1 day by default. This argument can modify the interval.</li>
             <li>dry_run: when true, view only orphan files, don't actually remove files. Default is false.</li>
       </td>
       <td>
           CALL sys.remove_orphan_files(table => 'default.T', older_than => '2023-10-31 12:00:00')<br/><br/>
+          CALL sys.remove_orphan_files(table => 'default.*', older_than => '2023-10-31 12:00:00')<br/><br/>
           CALL sys.remove_orphan_files(table => 'default.T', older_than => '2023-10-31 12:00:00', dry_run => true)
       </td>
     </tr>
@@ -168,38 +169,37 @@ This section introduce all available spark procedures about paimon.
       <td>
          To merge a branch to main branch. Arguments:
             <li>table: the target table identifier. Cannot be empty.</li>
-            <li>branch: name of the branch to be merged.</li>
+            <li>branch: name of the branch to be merged. If you specify multiple branches, delimiter is ','.</li>
       </td>
       <td>
           CALL sys.delete_branch(table => 'test_db.T', branch => 'test_branch')
       </td>
     </tr>
     <tr>
-      <td>merge_branch</td>
+      <td>fast_forward</td>
       <td>
-         To merge a branch to main branch. Arguments:
+         To fast_forward a branch to main branch. Arguments:
             <li>table: the target table identifier. Cannot be empty.</li>
             <li>branch: name of the branch to be merged.</li>
       </td>
       <td>
-          CALL sys.merge_branch(table => 'test_db.T', branch => 'test_branch')
+          CALL sys.fast_forward(table => 'test_db.T', branch => 'test_branch')
       </td>
     </tr>
    <tr>
       <td>reset_consumer</td>
-      <td>
-         -- reset the new next snapshot id in the consumer<br/>
-         CALL sys.reset_consumer('identifier', 'consumerId', nextSnapshotId)<br/><br/>
-         -- delete consumer<br/>
-         CALL sys.reset_consumer(table => 'identifier', consumerId => 'consumerId')
-      </td>
       <td>
          To reset or delete consumer. Arguments:
             <li>identifier: the target table identifier. Cannot be empty.</li>
             <li>consumerId: consumer to be reset or deleted.</li>
             <li>nextSnapshotId (Long): the new next snapshot id of the consumer.</li>
       </td>
-      <td>CALL sys.reset_consumer(table => 'default.T', consumerId => 'myid', nextSnapshotId=> 10)</td>
+      <td>
+         -- reset the new next snapshot id in the consumer<br/>
+         CALL sys.reset_consumer(table => 'default.T', consumerId => 'myid', nextSnapshotId => 10)<br/><br/>
+         -- delete consumer<br/>
+         CALL sys.reset_consumer(table => 'default.T', consumerId => 'myid')
+      </td>
    </tr>
     </tbody>
 </table>

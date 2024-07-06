@@ -16,26 +16,23 @@
  * limitations under the License.
  */
 
-package org.apache.paimon.flink.action;
+package org.apache.paimon.format.parquet.position;
 
-import java.util.Map;
+/** To delegate repetition level and definition level. */
+public class LevelDelegation {
+    private final int[] repetitionLevel;
+    private final int[] definitionLevel;
 
-/** Merge branch action for Flink. */
-public class MergeBranchAction extends TableActionBase {
-    private final String branchName;
-
-    public MergeBranchAction(
-            String warehouse,
-            String databaseName,
-            String tableName,
-            Map<String, String> catalogConfig,
-            String branchName) {
-        super(warehouse, databaseName, tableName, catalogConfig);
-        this.branchName = branchName;
+    public LevelDelegation(int[] repetitionLevel, int[] definitionLevel) {
+        this.repetitionLevel = repetitionLevel;
+        this.definitionLevel = definitionLevel;
     }
 
-    @Override
-    public void run() throws Exception {
-        table.mergeBranch(branchName);
+    public int[] getRepetitionLevel() {
+        return repetitionLevel;
+    }
+
+    public int[] getDefinitionLevel() {
+        return definitionLevel;
     }
 }

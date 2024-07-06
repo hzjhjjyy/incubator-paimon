@@ -20,6 +20,7 @@ package org.apache.paimon.table;
 
 import org.apache.paimon.CoreOptions;
 import org.apache.paimon.Snapshot;
+import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.consumer.ConsumerManager;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
@@ -101,6 +102,20 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         }
         this.tableSchema = tableSchema;
         this.catalogEnvironment = catalogEnvironment;
+    }
+
+    @Override
+    public String name() {
+        Identifier identifier = catalogEnvironment.identifier();
+        return identifier == null ? location().getName() : identifier.getObjectName();
+    }
+
+    @Override
+    public String fullName() {
+        Identifier identifier = catalogEnvironment.identifier();
+        return identifier == null
+                ? SchemaManager.fromPath(location().toUri().toString(), true).getFullName()
+                : identifier.getFullName();
     }
 
     @Override
@@ -525,8 +540,8 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     }
 
     @Override
-    public void mergeBranch(String branchName) {
-        branchManager().mergeBranch(branchName);
+    public void fastForward(String branchName) {
+        branchManager().fastForward(branchName);
     }
 
     @Override
@@ -544,9 +559,10 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
             // earliest hint
             SnapshotManager snapshotManager = snapshotManager();
             if (!snapshotManager.snapshotExists(taggedSnapshot.id())) {
-                fileIO.writeFileUtf8(
+                fileIO.writeFile(
                         snapshotManager().snapshotPath(taggedSnapshot.id()),
-                        fileIO.readFileUtf8(tagManager.tagPath(tagName)));
+                        fileIO.readFileUtf8(tagManager.tagPath(tagName)),
+                        false);
                 snapshotManager.commitEarliestHint(taggedSnapshot.id());
             }
         } catch (IOException e) {

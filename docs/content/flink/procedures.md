@@ -127,7 +127,7 @@ All available procedures are listed below.
       <td>
          To delete a tag. Arguments:
             <li>identifier: the target table identifier. Cannot be empty.</li>
-            <li>tagName: name of the tag to be deleted.</li>
+            <li>tagName: name of the tag to be deleted. If you specify multiple tags, delimiter is ','.</li>
       </td>
       <td>
          CALL sys.delete_tag('default.T', 'my_tag')
@@ -179,14 +179,15 @@ All available procedures are listed below.
       </td>
       <td>
          To remove the orphan data files and metadata files. Arguments:
-            <li>identifier: the target table identifier. Cannot be empty.</li>
+            <li>identifier: the target table identifier. Cannot be empty, you can use database_name.* to clean whole database.</li>
             <li>olderThan: to avoid deleting newly written files, this procedure only 
                deletes orphan files older than 1 day by default. This argument can modify the interval.
             </li>
             <li>dryRun: when true, view only orphan files, don't actually remove files. Default is false.</li>
       </td>
       <td>CALL remove_orphan_files('default.T', '2023-10-31 12:00:00')<br/><br/>
-          CALL remove_orphan_files('default.T', '2023-10-31 12:00:00', true) 
+          CALL remove_orphan_files('default.*', '2023-10-31 12:00:00')<br/><br/>
+          CALL remove_orphan_files('default.T', '2023-10-31 12:00:00', true)
       </td>
    </tr>
    <tr>
@@ -330,24 +331,24 @@ All available procedures are listed below.
       <td>
          To delete a branch. Arguments:
             <li>identifier: the target table identifier. Cannot be empty.</li>
-            <li>branchName: name of the branch to be deleted.</li>
+            <li>branchName: name of the branch to be deleted. If you specify multiple branches, delimiter is ','.</li>
       </td>
       <td>
          CALL sys.delete_branch('default.T', 'branch1')
       </td>
    </tr>
    <tr>
-      <td>merge_branch</td>
+      <td>fast_forward</td>
       <td>
-         CALL [catalog.]sys.merge_branch('identifier', 'branchName')
+         CALL [catalog.]sys.fast_forward('identifier', 'branchName')
       </td>
       <td>
-         To merge a branch to main branch. Arguments:
+         To fast_forward a branch to main branch. Arguments:
             <li>identifier: the target table identifier. Cannot be empty.</li>
             <li>branchName: name of the branch to be merged.</li>
       </td>
       <td>
-         CALL sys.merge_branch('default.T', 'branch1')
+         CALL sys.fast_forward('default.T', 'branch1')
       </td>
    </tr>
    </tbody>

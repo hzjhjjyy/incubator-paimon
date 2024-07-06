@@ -62,6 +62,16 @@ public class PrivilegedFileStoreTable implements FileStoreTable {
     }
 
     @Override
+    public String name() {
+        return wrapped.name();
+    }
+
+    @Override
+    public String fullName() {
+        return wrapped.fullName();
+    }
+
+    @Override
     public SnapshotReader newSnapshotReader() {
         privilegeChecker.assertCanSelect(identifier);
         return wrapped.newSnapshotReader();
@@ -205,9 +215,9 @@ public class PrivilegedFileStoreTable implements FileStoreTable {
     }
 
     @Override
-    public void mergeBranch(String branchName) {
+    public void fastForward(String branchName) {
         privilegeChecker.assertCanInsert(identifier);
-        wrapped.mergeBranch(branchName);
+        wrapped.fastForward(branchName);
     }
 
     @Override

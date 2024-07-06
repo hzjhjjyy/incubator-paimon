@@ -45,6 +45,10 @@ public interface Table extends Serializable {
     /** A name to identify this table. */
     String name();
 
+    default String fullName() {
+        return name();
+    }
+
     /** Returns the row type of this table. */
     RowType rowType();
 
@@ -91,6 +95,14 @@ public interface Table extends Serializable {
     @Experimental
     void deleteTag(String tagName);
 
+    /** Delete tags, tags are separated by commas. */
+    @Experimental
+    default void deleteTags(String tagNames) {
+        for (String tagName : tagNames.split(",")) {
+            deleteTag(tagName);
+        }
+    }
+
     /** Rollback table's state to a specific tag. */
     @Experimental
     void rollbackTo(String tagName);
@@ -111,9 +123,17 @@ public interface Table extends Serializable {
     @Experimental
     void deleteBranch(String branchName);
 
+    /** Delete branches, branches are separated by commas. */
+    @Experimental
+    default void deleteBranches(String branchNames) {
+        for (String branch : branchNames.split(",")) {
+            deleteBranch(branch);
+        }
+    }
+
     /** Merge a branch to main branch. */
     @Experimental
-    void mergeBranch(String branchName);
+    void fastForward(String branchName);
 
     /** Manually expire snapshots, parameters can be controlled independently of table options. */
     @Experimental
