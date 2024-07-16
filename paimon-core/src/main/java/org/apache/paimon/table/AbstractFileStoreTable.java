@@ -24,6 +24,7 @@ import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.consumer.ConsumerManager;
 import org.apache.paimon.fs.FileIO;
 import org.apache.paimon.fs.Path;
+import org.apache.paimon.iceberg.IcebergCommitCallback;
 import org.apache.paimon.metastore.AddPartitionCommitCallback;
 import org.apache.paimon.metastore.AddPartitionTagCallback;
 import org.apache.paimon.metastore.MetastoreClient;
@@ -316,19 +317,13 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
     @Override
     public ExpireSnapshots newExpireSnapshots() {
         return new ExpireSnapshotsImpl(
-                snapshotManager(),
-                store().newSnapshotDeletion(),
-                store().newTagManager(),
-                coreOptions().snapshotExpireCleanEmptyDirectories());
+                snapshotManager(), store().newSnapshotDeletion(), store().newTagManager());
     }
 
     @Override
     public ExpireSnapshots newExpireChangelog() {
         return new ExpireChangelogImpl(
-                snapshotManager(),
-                tagManager(),
-                store().newChangelogDeletion(),
-                coreOptions().snapshotExpireCleanEmptyDirectories());
+                snapshotManager(), tagManager(), store().newChangelogDeletion());
     }
 
     @Override
@@ -351,7 +346,7 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
 
         return new TableCommitImpl(
                 store().newCommit(commitUser),
-                createCommitCallbacks(),
+                createCommitCallbacks(commitUser),
                 snapshotExpire,
                 options.writeOnly() ? null : store().newPartitionExpire(commitUser),
                 options.writeOnly() ? null : store().newTagCreationManager(),
@@ -363,17 +358,19 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
                 coreOptions().forceCreatingSnapshot());
     }
 
-    private List<CommitCallback> createCommitCallbacks() {
+    private List<CommitCallback> createCommitCallbacks(String commitUser) {
         List<CommitCallback> callbacks =
                 new ArrayList<>(CallbackUtils.loadCommitCallbacks(coreOptions()));
         CoreOptions options = coreOptions();
         MetastoreClient.Factory metastoreClientFactory =
                 catalogEnvironment.metastoreClientFactory();
+
         if (options.partitionedTableInMetastore()
                 && metastoreClientFactory != null
                 && tableSchema.partitionKeys().size() > 0) {
             callbacks.add(new AddPartitionCommitCallback(metastoreClientFactory.create()));
         }
+
         TagPreview tagPreview = TagPreview.create(options);
         if (options.tagToPartitionField() != null
                 && tagPreview != null
@@ -386,6 +383,11 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
                             tagPreview);
             callbacks.add(callback);
         }
+
+        if (options.metadataIcebergCompatible()) {
+            callbacks.add(new IcebergCommitCallback(this, commitUser));
+        }
+
         return callbacks;
     }
 

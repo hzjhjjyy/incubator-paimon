@@ -57,6 +57,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.apache.paimon.options.ConfigOptions.key;
+import static org.apache.paimon.options.MemorySize.VALUE_128_MB;
+import static org.apache.paimon.options.MemorySize.VALUE_256_MB;
 import static org.apache.paimon.options.description.TextElement.text;
 import static org.apache.paimon.utils.Preconditions.checkArgument;
 
@@ -157,7 +159,7 @@ public class CoreOptions implements Serializable {
                     .stringType()
                     .defaultValue("zstd")
                     .withDescription(
-                            "Default file compression. For faster read and write, it is recommended to use LZ4.");
+                            "Default file compression. For faster read and write, it is recommended to use zstd.");
 
     public static final ConfigOption<Integer> FILE_COMPRESSION_ZSTD_LEVEL =
             key("file.compression.zstd-level")
@@ -280,14 +282,19 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "The maximum number of snapshots allowed to expire at a time.");
 
-    public static final ConfigOption<Boolean> SNAPSHOT_EXPIRE_CLEAN_EMPTY_DIRECTORIES =
-            key("snapshot.expire.clean-empty-directories")
+    public static final ConfigOption<Boolean> SNAPSHOT_CLEAN_EMPTY_DIRECTORIES =
+            key("snapshot.clean-empty-directories")
                     .booleanType()
-                    .defaultValue(true)
+                    .defaultValue(false)
+                    .withDeprecatedKeys("snapshot.expire.clean-empty-directories")
                     .withDescription(
-                            "Whether to try to clean empty directories when expiring snapshots. "
-                                    + "Note that trying to clean directories might throw exceptions in filesystem, "
-                                    + "but in most cases it won't cause problems.");
+                            Description.builder()
+                                    .text(
+                                            "Whether to try to clean empty directories when expiring snapshots, if enabled, please note:")
+                                    .list(
+                                            text("hdfs: may print exceptions in NameNode."),
+                                            text("oss/s3: may cause performance issue."))
+                                    .build());
 
     public static final ConfigOption<Duration> CONTINUOUS_DISCOVERY_INTERVAL =
             key("continuous.discovery-interval")
@@ -344,9 +351,9 @@ public class CoreOptions implements Serializable {
     public static final ConfigOption<String> SPILL_COMPRESSION =
             key("spill-compression")
                     .stringType()
-                    .defaultValue("LZ4")
+                    .defaultValue("zstd")
                     .withDescription(
-                            "Compression for spill, currently lz4, lzo and zstd are supported.");
+                            "Compression for spill, currently zstd, lzo and zstd are supported.");
 
     public static final ConfigOption<Boolean> WRITE_ONLY =
             key("write-only")
@@ -438,8 +445,14 @@ public class CoreOptions implements Serializable {
     public static final ConfigOption<MemorySize> TARGET_FILE_SIZE =
             key("target-file-size")
                     .memoryType()
-                    .defaultValue(MemorySize.ofMebiBytes(128))
-                    .withDescription("Target size of a file.");
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text("Target size of a file.")
+                                    .list(
+                                            text("primary key table: the default value is 128 MB."),
+                                            text("append table: the default value is 256 MB."))
+                                    .build());
 
     public static final ConfigOption<Integer> NUM_SORTED_RUNS_COMPACTION_TRIGGER =
             key("num-sorted-run.compaction-trigger")
@@ -814,9 +827,9 @@ public class CoreOptions implements Serializable {
     public static final ConfigOption<String> LOOKUP_CACHE_SPILL_COMPRESSION =
             key("lookup.cache-spill-compression")
                     .stringType()
-                    .defaultValue("lz4")
+                    .defaultValue("zstd")
                     .withDescription(
-                            "Spill compression for lookup cache, currently none, lz4, lzo and zstd are supported.");
+                            "Spill compression for lookup cache, currently zstd, none, lz4 and lzo are supported.");
 
     public static final ConfigOption<MemorySize> LOOKUP_CACHE_MAX_MEMORY_SIZE =
             key("lookup.cache-max-memory-size")
@@ -1019,6 +1032,25 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "Parameter string for the constructor of class #. "
                                     + "Callback class should parse the parameter by itself.");
+
+    public static final ConfigOption<String> PARTITION_MARK_DONE_ACTION =
+            key("partition.mark-done-action")
+                    .stringType()
+                    .defaultValue("success-file")
+                    .withDescription(
+                            Description.builder()
+                                    .text(
+                                            "Action to mark a partition done is to notify the downstream application that the partition"
+                                                    + " has finished writing, the partition is ready to be read.")
+                                    .linebreak()
+                                    .text("1. 'success-file': add '_success' file to directory.")
+                                    .linebreak()
+                                    .text(
+                                            "2. 'done-partition': add 'xxx.done' partition to metastore.")
+                                    .linebreak()
+                                    .text(
+                                            "Both can be configured at the same time: 'done-partition,success-file'.")
+                                    .build());
 
     public static final ConfigOption<Boolean> METASTORE_PARTITIONED_TABLE =
             key("metastore.partitioned-table")
@@ -1244,6 +1276,14 @@ public class CoreOptions implements Serializable {
                                     + ChangelogProducer.LOOKUP.name()
                                     + ", commit will wait for changelog generation by lookup.");
 
+    public static final ConfigOption<Boolean> METADATA_ICEBERG_COMPATIBLE =
+            key("metadata.iceberg-compatible")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "When set to true, produce Iceberg metadata after a snapshot is committed, "
+                                    + "so that Iceberg readers can read Paimon's raw files.");
+
     private final Options options;
 
     public CoreOptions(Map<String, String> options) {
@@ -1464,8 +1504,8 @@ public class CoreOptions implements Serializable {
         return options.get(SNAPSHOT_EXPIRE_LIMIT);
     }
 
-    public boolean snapshotExpireCleanEmptyDirectories() {
-        return options.get(SNAPSHOT_EXPIRE_CLEAN_EMPTY_DIRECTORIES);
+    public boolean cleanEmptyDirectories() {
+        return options.get(SNAPSHOT_CLEAN_EMPTY_DIRECTORIES);
     }
 
     public ExpireConfig expireConfig() {
@@ -1567,15 +1607,17 @@ public class CoreOptions implements Serializable {
         return options.get(LOOKUP_CACHE_MAX_MEMORY_SIZE);
     }
 
-    public long targetFileSize() {
-        return options.get(TARGET_FILE_SIZE).getBytes();
+    public long targetFileSize(boolean hasPrimaryKey) {
+        return options.getOptional(TARGET_FILE_SIZE)
+                .orElse(hasPrimaryKey ? VALUE_128_MB : VALUE_256_MB)
+                .getBytes();
     }
 
-    public long compactionFileSize() {
+    public long compactionFileSize(boolean hasPrimaryKey) {
         // file size to join the compaction, we don't process on middle file size to avoid
         // compact a same file twice (the compression is not calculate so accurately. the output
         // file maybe be less than target file generated by rolling file write).
-        return options.get(TARGET_FILE_SIZE).getBytes() / 10 * 7;
+        return targetFileSize(hasPrimaryKey) / 10 * 7;
     }
 
     public int numSortedRunCompactionTrigger() {
@@ -1965,6 +2007,10 @@ public class CoreOptions implements Serializable {
     public boolean prepareCommitWaitCompaction() {
         return changelogProducer() == ChangelogProducer.LOOKUP
                 && options.get(CHANGELOG_PRODUCER_LOOKUP_WAIT);
+    }
+
+    public boolean metadataIcebergCompatible() {
+        return options.get(METADATA_ICEBERG_COMPATIBLE);
     }
 
     /** Specifies the merge engine for table with primary key. */
