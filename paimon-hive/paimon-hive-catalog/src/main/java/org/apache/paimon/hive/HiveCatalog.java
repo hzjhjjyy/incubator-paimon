@@ -402,10 +402,17 @@ public class HiveCatalog extends AbstractCatalog {
     }
 
     @Override
-    public TableSchema getDataTableSchema(Identifier identifier) throws TableNotExistException {
+    public TableSchema getDataTableSchema(Identifier identifier, String branchName)
+            throws TableNotExistException {
+        assertMainBranch(branchName);
+        return getDataTableSchema(identifier);
+    }
+
+    private TableSchema getDataTableSchema(Identifier identifier) throws TableNotExistException {
         if (!tableExists(identifier)) {
             throw new TableNotExistException(identifier);
         }
+
         Path tableLocation = getDataTableLocation(identifier);
         return tableSchemaInFileSystem(tableLocation)
                 .orElseThrow(() -> new TableNotExistException(identifier));
@@ -535,8 +542,10 @@ public class HiveCatalog extends AbstractCatalog {
     }
 
     @Override
-    protected void alterTableImpl(Identifier identifier, List<SchemaChange> changes)
+    protected void alterTableImpl(
+            Identifier identifier, String branchName, List<SchemaChange> changes)
             throws TableNotExistException, ColumnAlreadyExistException, ColumnNotExistException {
+        assertMainBranch(branchName);
 
         final SchemaManager schemaManager = schemaManager(identifier);
         // first commit changes to underlying files
@@ -616,6 +625,7 @@ public class HiveCatalog extends AbstractCatalog {
 
     @Override
     public void repairTable(Identifier identifier) throws TableNotExistException {
+        checkNotBranch(identifier, "repairTable");
         checkNotSystemTable(identifier, "repairTable");
         validateIdentifierNameCaseInsensitive(identifier);
 

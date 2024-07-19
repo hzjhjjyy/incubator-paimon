@@ -554,6 +554,14 @@ public class CoreOptions implements Serializable {
                                     + " the sequence number determines which data is the most recent.");
 
     @Immutable
+    public static final ConfigOption<Boolean> PARTIAL_UPDATE_REMOVE_RECORD_ON_DELETE =
+            key("partial-update.remove-record-on-delete")
+                    .booleanType()
+                    .defaultValue(false)
+                    .withDescription(
+                            "Whether to remove the whole row in partial-update engine when -D records are received.");
+
+    @Immutable
     public static final ConfigOption<String> ROWKIND_FIELD =
             key("rowkind.field")
                     .stringType()
@@ -800,6 +808,12 @@ public class CoreOptions implements Serializable {
                     .noDefaultValue()
                     .withDescription(
                             "Define partition by table options, cannot define partition on DDL and table options at the same time.");
+
+    public static final ConfigOption<LookupLocalFileType> LOOKUP_LOCAL_FILE_TYPE =
+            key("lookup.local-file-type")
+                    .enumType(LookupLocalFileType.class)
+                    .defaultValue(LookupLocalFileType.HASH)
+                    .withDescription("The local file type for lookup.");
 
     public static final ConfigOption<Float> LOOKUP_HASH_LOAD_FACTOR =
             key("lookup.hash-load-factor")
@@ -1265,16 +1279,13 @@ public class CoreOptions implements Serializable {
                     .noDefaultValue()
                     .withDescription("Specifies the commit user prefix.");
 
-    public static final ConfigOption<Boolean> CHANGELOG_PRODUCER_LOOKUP_WAIT =
-            key("changelog-producer.lookup-wait")
+    public static final ConfigOption<Boolean> LOOKUP_WAIT =
+            key("lookup-wait")
                     .booleanType()
                     .defaultValue(true)
+                    .withFallbackKeys("changelog-producer.lookup-wait")
                     .withDescription(
-                            "When "
-                                    + CoreOptions.CHANGELOG_PRODUCER.key()
-                                    + " is set to "
-                                    + ChangelogProducer.LOOKUP.name()
-                                    + ", commit will wait for changelog generation by lookup.");
+                            "When need to lookup, commit will wait for compaction by lookup.");
 
     public static final ConfigOption<Boolean> METADATA_ICEBERG_COMPATIBLE =
             key("metadata.iceberg-compatible")
@@ -1283,6 +1294,14 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "When set to true, produce Iceberg metadata after a snapshot is committed, "
                                     + "so that Iceberg readers can read Paimon's raw files.");
+
+    public static final ConfigOption<Integer> DELETE_FILE_THREAD_NUM =
+            key("delete-file.thread-num")
+                    .intType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "The maximum number of concurrent deleting files. "
+                                    + "By default is the number of processors available to the Java virtual machine.");
 
     private final Options options;
 
@@ -1508,6 +1527,11 @@ public class CoreOptions implements Serializable {
         return options.get(SNAPSHOT_CLEAN_EMPTY_DIRECTORIES);
     }
 
+    public int deleteFileThreadNum() {
+        return options.getOptional(DELETE_FILE_THREAD_NUM)
+                .orElseGet(() -> Runtime.getRuntime().availableProcessors());
+    }
+
     public ExpireConfig expireConfig() {
         return ExpireConfig.builder()
                 .snapshotRetainMax(snapshotNumRetainMax())
@@ -1601,6 +1625,10 @@ public class CoreOptions implements Serializable {
 
     public int cachePageSize() {
         return (int) options.get(CACHE_PAGE_SIZE).getBytes();
+    }
+
+    public LookupLocalFileType lookupLocalFileType() {
+        return options.get(LOOKUP_LOCAL_FILE_TYPE);
     }
 
     public MemorySize lookupCacheMaxMemory() {
@@ -2005,8 +2033,11 @@ public class CoreOptions implements Serializable {
     }
 
     public boolean prepareCommitWaitCompaction() {
-        return changelogProducer() == ChangelogProducer.LOOKUP
-                && options.get(CHANGELOG_PRODUCER_LOOKUP_WAIT);
+        if (!needLookup()) {
+            return false;
+        }
+
+        return options.get(LOOKUP_WAIT);
     }
 
     public boolean metadataIcebergCompatible() {
@@ -2581,6 +2612,32 @@ public class CoreOptions implements Serializable {
         private final String description;
 
         PartitionExpireStrategy(String value, String description) {
+            this.value = value;
+            this.description = description;
+        }
+
+        @Override
+        public String toString() {
+            return value;
+        }
+
+        @Override
+        public InlineElement getDescription() {
+            return text(description);
+        }
+    }
+
+    /** Specifies the local file type for lookup. */
+    public enum LookupLocalFileType implements DescribedEnum {
+        SORT("sort", "Construct a sorted file for lookup."),
+
+        HASH("hash", "Construct a hash file for lookup.");
+
+        private final String value;
+
+        private final String description;
+
+        LookupLocalFileType(String value, String description) {
             this.value = value;
             this.description = description;
         }

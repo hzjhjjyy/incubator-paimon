@@ -63,12 +63,6 @@ under the License.
             <td>Whether to double write to a changelog file. This changelog file keeps the details of data changes, it can be read directly during stream reads. This can be applied to tables with primary keys. <br /><br />Possible values:<ul><li>"none": No changelog file.</li><li>"input": Double write to a changelog file when flushing memory table, the changelog is from input.</li><li>"full-compaction": Generate changelog files with each full compaction.</li><li>"lookup": Generate changelog files through 'lookup' before committing the data writing.</li></ul></td>
         </tr>
         <tr>
-            <td><h5>changelog-producer.lookup-wait</h5></td>
-            <td style="word-wrap: break-word;">true</td>
-            <td>Boolean</td>
-            <td>When changelog-producer is set to LOOKUP, commit will wait for changelog generation by lookup.</td>
-        </tr>
-        <tr>
             <td><h5>changelog-producer.row-deduplicate</h5></td>
             <td style="word-wrap: break-word;">false</td>
             <td>Boolean</td>
@@ -193,6 +187,12 @@ under the License.
             <td style="word-wrap: break-word;">(none)</td>
             <td>Duration</td>
             <td>The TTL in rocksdb index for cross partition upsert (primary keys not contain all partition fields), this can avoid maintaining too many indexes and lead to worse and worse performance, but please note that this may also cause data duplication.</td>
+        </tr>
+        <tr>
+            <td><h5>delete-file.thread-num</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>Integer</td>
+            <td>The maximum number of concurrent deleting files. By default is the number of processors available to the Java virtual machine.</td>
         </tr>
         <tr>
             <td><h5>delete.force-produce-changelog</h5></td>
@@ -340,6 +340,12 @@ Mainly to resolve data skew on primary keys. We recommend starting with 64 mb wh
             <td>The maximal fan-in for external merge sort. It limits the number of file handles. If it is too small, may cause intermediate merging. But if it is too large, it will cause too many files opened at the same time, consume memory and lead to random reading.</td>
         </tr>
         <tr>
+            <td><h5>lookup-wait</h5></td>
+            <td style="word-wrap: break-word;">true</td>
+            <td>Boolean</td>
+            <td>When need to lookup, commit will wait for compaction by lookup.</td>
+        </tr>
+        <tr>
             <td><h5>lookup.cache-file-retention</h5></td>
             <td style="word-wrap: break-word;">1 h</td>
             <td>Duration</td>
@@ -380,6 +386,12 @@ Mainly to resolve data skew on primary keys. We recommend starting with 64 mb wh
             <td style="word-wrap: break-word;">0.75</td>
             <td>Float</td>
             <td>The index load factor for lookup.</td>
+        </tr>
+        <tr>
+            <td><h5>lookup.local-file-type</h5></td>
+            <td style="word-wrap: break-word;">hash</td>
+            <td><p>Enum</p></td>
+            <td>The local file type for lookup.<br /><br />Possible values:<ul><li>"sort": Construct a sorted file for lookup.</li><li>"hash": Construct a hash file for lookup.</li></ul></td>
         </tr>
         <tr>
             <td><h5>manifest.compression</h5></td>
@@ -478,6 +490,12 @@ This config option does not affect the default filesystem metastore.</td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Integer</td>
             <td>Turn off the dictionary encoding for all fields in parquet.</td>
+        </tr>
+        <tr>
+            <td><h5>partial-update.remove-record-on-delete</h5></td>
+            <td style="word-wrap: break-word;">false</td>
+            <td>Boolean</td>
+            <td>Whether to remove the whole row in partial-update engine when -D records are received.</td>
         </tr>
         <tr>
             <td><h5>partition</h5></td>

@@ -72,6 +72,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.SortedMap;
 import java.util.function.BiConsumer;
 
@@ -105,6 +106,12 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         }
         this.tableSchema = tableSchema;
         this.catalogEnvironment = catalogEnvironment;
+    }
+
+    @Override
+    public OptionalLong latestSnapshotId() {
+        Long snapshot = store().snapshotManager().latestSnapshotId();
+        return snapshot == null ? OptionalLong.empty() : OptionalLong.of(snapshot);
     }
 
     @Override
@@ -256,7 +263,15 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         CoreOptions.setDefaultValues(newOptions);
 
         // copy a new table schema to contain dynamic options
-        TableSchema newTableSchema = tableSchema.copy(newOptions.toMap());
+        TableSchema newTableSchema = tableSchema;
+        if (newOptions.contains(CoreOptions.BRANCH)) {
+            newTableSchema =
+                    schemaManager()
+                            .copyWithBranch(new CoreOptions(newOptions).branch())
+                            .latest()
+                            .get();
+        }
+        newTableSchema = newTableSchema.copy(newOptions.toMap());
 
         if (tryTimeTravel) {
             // see if merged options contain time travel option
@@ -283,6 +298,13 @@ abstract class AbstractFileStoreTable implements FileStoreTable {
         } else {
             return this;
         }
+    }
+
+    @Override
+    public FileStoreTable copy(TableSchema newTableSchema) {
+        return newTableSchema.primaryKeys().isEmpty()
+                ? new AppendOnlyFileStoreTable(fileIO, path, newTableSchema, catalogEnvironment)
+                : new PrimaryKeyFileStoreTable(fileIO, path, newTableSchema, catalogEnvironment);
     }
 
     protected SchemaManager schemaManager() {
