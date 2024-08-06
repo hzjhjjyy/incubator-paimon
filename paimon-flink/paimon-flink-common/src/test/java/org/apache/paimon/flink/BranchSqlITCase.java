@@ -18,8 +18,6 @@
 
 package org.apache.paimon.flink;
 
-import org.apache.paimon.branch.TableBranch;
-import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.utils.SnapshotManager;
 
@@ -32,13 +30,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** IT cases for table with branches using SQL. */
 public class BranchSqlITCase extends CatalogITCaseBase {
 
     @Test
     public void testAlterBranchTable() throws Exception {
-
         sql(
                 "CREATE TABLE T ("
                         + " pt INT"
@@ -137,8 +135,7 @@ public class BranchSqlITCase extends CatalogITCaseBase {
     }
 
     @Test
-    public void testCreateBranchFromSnapshot() throws Catalog.TableNotExistException {
-
+    public void testCreateBranchFromSnapshot() throws Exception {
         sql(
                 "CREATE TABLE T ("
                         + " pt INT"
@@ -158,12 +155,8 @@ public class BranchSqlITCase extends CatalogITCaseBase {
         sql("CALL sys.create_branch('default.T', 'test', 1)");
         sql("CALL sys.create_branch('default.T', 'test2', 2)");
 
-        FileStoreTable table = paimonTable("T");
-
-        assertThat(
-                        table.branchManager().branches().stream()
-                                .map(TableBranch::getCreatedFromSnapshot))
-                .containsExactlyInAnyOrder(1L, 2L);
+        assertThat(collectResult("SELECT created_from_snapshot FROM `T$branches`"))
+                .containsExactlyInAnyOrder("+I[1]", "+I[2]");
 
         assertThat(paimonTable("T$branch_test").snapshotManager().snapshotExists(1))
                 .isEqualTo(true);
@@ -223,25 +216,17 @@ public class BranchSqlITCase extends CatalogITCaseBase {
         sql("CALL sys.create_branch('default.T', 'test', 1)");
         sql("CALL sys.create_branch('default.T', 'test2', 2)");
 
-        FileStoreTable table = paimonTable("T");
-
-        assertThat(
-                        table.branchManager().branches().stream()
-                                .map(TableBranch::getCreatedFromSnapshot))
-                .containsExactlyInAnyOrder(1L, 2L);
-
-        assertThat(table.branchManager().branches().stream().map(TableBranch::getBranchName))
-                .containsExactlyInAnyOrder("test", "test2");
+        assertThat(collectResult("SELECT branch_name, created_from_snapshot FROM `T$branches`"))
+                .containsExactlyInAnyOrder("+I[test, 1]", "+I[test2, 2]");
 
         sql("CALL sys.delete_branch('default.T', 'test')");
 
-        assertThat(table.branchManager().branches().stream().map(TableBranch::getBranchName))
-                .containsExactlyInAnyOrder("test2");
+        assertThat(collectResult("SELECT branch_name, created_from_snapshot FROM `T$branches`"))
+                .containsExactlyInAnyOrder("+I[test2, 2]");
     }
 
     @Test
-    public void testBranchManagerGetBranchSnapshotsList()
-            throws Catalog.TableNotExistException, IOException {
+    public void testBranchManagerGetBranchSnapshotsList() throws Exception {
         sql(
                 "CREATE TABLE T ("
                         + " pt INT"
@@ -263,10 +248,8 @@ public class BranchSqlITCase extends CatalogITCaseBase {
         sql("CALL sys.create_branch('default.T', 'test2', 2)");
         sql("CALL sys.create_branch('default.T', 'test3', 3)");
 
-        assertThat(
-                        table.branchManager().branches().stream()
-                                .map(TableBranch::getCreatedFromSnapshot))
-                .containsExactlyInAnyOrder(1L, 2L, 3L);
+        assertThat(collectResult("SELECT created_from_snapshot FROM `T$branches`"))
+                .containsExactlyInAnyOrder("+I[1]", "+I[2]", "+I[3]");
     }
 
     @Test
@@ -311,6 +294,75 @@ public class BranchSqlITCase extends CatalogITCaseBase {
                 .containsExactlyInAnyOrder("+I[1, 10, hunter]", "+I[2, 10, hunterX]");
 
         checkSnapshots(snapshotManager, 1, 2);
+    }
+
+    @Test
+    public void testFallbackBranchBatchRead() throws Exception {
+        sql(
+                "CREATE TABLE t ( pt INT NOT NULL, k INT NOT NULL, v STRING ) PARTITIONED BY (pt) WITH ( 'bucket' = '-1' )");
+        sql("INSERT INTO t VALUES (1, 10, 'apple'), (1, 20, 'banana')");
+
+        sql("CALL sys.create_branch('default.t', 'pk')");
+        sql("ALTER TABLE `t$branch_pk` SET ( 'primary-key' = 'pt, k', 'bucket' = '2' )");
+        sql("ALTER TABLE t SET ( 'scan.fallback-branch' = 'pk' )");
+
+        sql("INSERT INTO `t$branch_pk` VALUES (1, 20, 'cat'), (1, 30, 'dog')");
+        assertThat(collectResult("SELECT v, k FROM t"))
+                .containsExactlyInAnyOrder("+I[apple, 10]", "+I[banana, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk`"))
+                .containsExactlyInAnyOrder("+I[cat, 20]", "+I[dog, 30]");
+
+        sql("INSERT INTO `t$branch_pk` VALUES (2, 10, 'tiger'), (2, 20, 'wolf')");
+        assertThat(collectResult("SELECT v, k FROM t"))
+                .containsExactlyInAnyOrder(
+                        "+I[apple, 10]", "+I[banana, 20]", "+I[tiger, 10]", "+I[wolf, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk`"))
+                .containsExactlyInAnyOrder(
+                        "+I[cat, 20]", "+I[dog, 30]", "+I[tiger, 10]", "+I[wolf, 20]");
+        assertThat(collectResult("SELECT v, k FROM t WHERE pt = 1"))
+                .containsExactlyInAnyOrder("+I[apple, 10]", "+I[banana, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk` WHERE pt = 1"))
+                .containsExactlyInAnyOrder("+I[cat, 20]", "+I[dog, 30]");
+        assertThat(collectResult("SELECT v, k FROM t WHERE pt = 2"))
+                .containsExactlyInAnyOrder("+I[tiger, 10]", "+I[wolf, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk` WHERE pt = 2"))
+                .containsExactlyInAnyOrder("+I[tiger, 10]", "+I[wolf, 20]");
+
+        sql("INSERT INTO `t$branch_pk` VALUES (2, 10, 'lion')");
+        assertThat(collectResult("SELECT v, k FROM t"))
+                .containsExactlyInAnyOrder(
+                        "+I[apple, 10]", "+I[banana, 20]", "+I[lion, 10]", "+I[wolf, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk`"))
+                .containsExactlyInAnyOrder(
+                        "+I[cat, 20]", "+I[dog, 30]", "+I[lion, 10]", "+I[wolf, 20]");
+
+        sql("INSERT OVERWRITE t PARTITION (pt = 1) VALUES (10, 'pear'), (20, 'mango')");
+        assertThat(collectResult("SELECT v, k FROM t"))
+                .containsExactlyInAnyOrder(
+                        "+I[pear, 10]", "+I[mango, 20]", "+I[lion, 10]", "+I[wolf, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk`"))
+                .containsExactlyInAnyOrder(
+                        "+I[cat, 20]", "+I[dog, 30]", "+I[lion, 10]", "+I[wolf, 20]");
+
+        sql("ALTER TABLE t RESET ( 'scan.fallback-branch' )");
+        assertThat(collectResult("SELECT v, k FROM t"))
+                .containsExactlyInAnyOrder("+I[pear, 10]", "+I[mango, 20]");
+        assertThat(collectResult("SELECT v, k FROM `t$branch_pk`"))
+                .containsExactlyInAnyOrder(
+                        "+I[cat, 20]", "+I[dog, 30]", "+I[lion, 10]", "+I[wolf, 20]");
+    }
+
+    @Test
+    public void testDifferentRowTypes() {
+        sql(
+                "CREATE TABLE t ( pt INT NOT NULL, k INT NOT NULL, v STRING ) PARTITIONED BY (pt) WITH ( 'bucket' = '-1' )");
+        sql("CALL sys.create_branch('default.t', 'pk')");
+        sql("ALTER TABLE `t$branch_pk` SET ( 'primary-key' = 'pt, k', 'bucket' = '2' )");
+        sql("ALTER TABLE `t$branch_pk` ADD (v2 INT)");
+        sql("ALTER TABLE t SET ( 'scan.fallback-branch' = 'pk' )");
+
+        assertThatThrownBy(() -> sql("INSERT INTO t VALUES (1, 10, 'apple')"))
+                .hasMessageContaining("Branch main and pk does not have the same row type");
     }
 
     private List<String> collectResult(String sql) throws Exception {

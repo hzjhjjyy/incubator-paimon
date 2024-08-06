@@ -410,7 +410,7 @@ public class CoreOptions implements Serializable {
     public static final ConfigOption<Integer> WRITE_MAX_WRITERS_TO_SPILL =
             key("write-max-writers-to-spill")
                     .intType()
-                    .defaultValue(5)
+                    .defaultValue(10)
                     .withDescription(
                             "When in batch append inserting, if the writer number is greater than this option, we open the buffer cache and spill function to avoid out-of-memory. ");
 
@@ -1274,6 +1274,14 @@ public class CoreOptions implements Serializable {
                     .withDescription(
                             "The maximum number of concurrent deleting files. "
                                     + "By default is the number of processors available to the Java virtual machine.");
+
+    public static final ConfigOption<String> SCAN_FALLBACK_BRANCH =
+            key("scan.fallback-branch")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            "When a batch job queries from a table, if a partition does not exist in the current branch, "
+                                    + "the reader will try to get this partition from this fallback branch.");
 
     private final Options options;
 

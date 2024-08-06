@@ -582,6 +582,12 @@ This config option does not affect the default filesystem metastore.</td>
             <td>End condition "watermark" for bounded streaming mode. Stream reading will end when a larger watermark snapshot is encountered.</td>
         </tr>
         <tr>
+            <td><h5>scan.fallback-branch</h5></td>
+            <td style="word-wrap: break-word;">(none)</td>
+            <td>String</td>
+            <td>When a batch job queries from a table, if a partition does not exist in the current branch, the reader will try to get this partition from this fallback branch.</td>
+        </tr>
+        <tr>
             <td><h5>scan.file-creation-time-millis</h5></td>
             <td style="word-wrap: break-word;">(none)</td>
             <td>Long</td>
@@ -848,7 +854,7 @@ If the data size allocated for the sorting task is uneven,which may lead to perf
         </tr>
         <tr>
             <td><h5>write-max-writers-to-spill</h5></td>
-            <td style="word-wrap: break-word;">5</td>
+            <td style="word-wrap: break-word;">10</td>
             <td>Integer</td>
             <td>When in batch append inserting, if the writer number is greater than this option, we open the buffer cache and spill function to avoid out-of-memory. </td>
         </tr>
